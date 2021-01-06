@@ -79,7 +79,7 @@ class VAE(nn.Module):
         x : torch.Tensor
             Batch of data. Shape (batch_size, n_chan, height, width)
         """
-        latent_dist = self.encoder(x)
+        latent_dist = self.encoder(x.float())
         latent_sample = self.reparameterize(*latent_dist)
         reconstruct = self.decoder(latent_sample)
         return reconstruct, latent_dist, latent_sample

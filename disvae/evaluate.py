@@ -17,6 +17,7 @@ from disvae.utils.modelIO import save_metadata
 TEST_LOSSES_FILE = "test_losses.log"
 METRICS_FILENAME = "metrics.log"
 METRIC_HELPERS_FILE = "metric_helpers.pth"
+TEST_UTILITY_FILE = "test_utilities.log"
 
 
 class Evaluator:
@@ -57,7 +58,7 @@ class Evaluator:
         self.is_progress_bar = is_progress_bar
         self.logger.info("Testing Device: {}".format(self.device))
 
-    def __call__(self, data_loader, is_metrics=False, is_losses=True):
+    def __call__(self, data_loader, is_metrics=False, is_losses=True, is_utility=True):
         """Compute all test losses.
 
         Parameters
@@ -69,6 +70,9 @@ class Evaluator:
 
         is_losses: bool, optional
             Whether to compute and store the test losses.
+        
+        is_utility: bool, optional
+            Whether to computer the expected utility of the model representations 
         """
         start = default_timer()
         is_still_training = self.model.training
@@ -86,6 +90,12 @@ class Evaluator:
             losses = self.compute_losses(data_loader)
             self.logger.info('Losses: {}'.format(losses))
             save_metadata(losses, self.save_dir, filename=TEST_LOSSES_FILE)
+        
+        if is_utility: 
+            self.logger.info('Computing expected utility...')
+            utilities = self.compute_utilities(data_loader)
+            self.logger.info('Losses: {}'.format(utilities))
+            save_metadata(utilities, self.save_dir, filename=TEST_UTILITY_FILE)
 
         if is_still_training:
             self.model.train()
@@ -93,6 +103,15 @@ class Evaluator:
         self.logger.info('Finished evaluating after {:.1f} min.'.format((default_timer() - start) / 60))
 
         return metric, losses
+
+    def compute_utilities(self, dataloader):
+        """Compute all test losses.
+
+        Parameters
+        ----------
+        data_loader: torch.utils.data.DataLoader
+        """
+        return None 
 
     def compute_losses(self, dataloader):
         """Compute all test losses.

@@ -4,6 +4,10 @@ import sys
 import os
 from configparser import ConfigParser
 
+import torch 
+import ctypes
+ctypes.cdll.LoadLibrary('caffe2_nvrtc.dll')
+
 from torch import optim
 
 from disvae import init_specific_model, Trainer, Evaluator
@@ -24,6 +28,20 @@ EXPERIMENTS = ADDITIONAL_EXP + ["{}_{}".format(loss, data)
                                 for loss in LOSSES
                                 for data in DATASETS]
 
+# python main.py dice_mix -d dice -r utility -l betaB --betaB-G 1
+# python main.py dice_utility -d dice -l utility 
+# python main.py dice_betaB -d dice -l betaB
+# python main.py test -d dice -r utility -l betaB --betaB-G 1
+
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def parse_arguments(args_to_parse):
     """Parse the command line arguments.
@@ -53,6 +71,8 @@ def parse_arguments(args_to_parse):
                          help='Disables CUDA training, even when have one.')
     general.add_argument('-s', '--seed', type=int, default=default_config['seed'],
                          help='Random seed. Can be `None` for stochastic behavior.')
+    general.add_argument('-is-eu', type=str2bool, nargs='?', const=True, default=False,
+                         help='Determine if the EU loss wil be calculated and saved.')
 
     # Learning options
     training = parser.add_argument_group('Training specific options')
@@ -86,7 +106,7 @@ def parse_arguments(args_to_parse):
                        help="Type of VAE loss function to use.")
     model.add_argument('-r', '--rec-dist', default=default_config['rec_dist'],
                        choices=RECON_DIST,
-                       help="Form of the likelihood ot use for each pixel.")
+                       help="Form of the likelihood to use for each pixel.")
     model.add_argument('-a', '--reg-anneal', type=float,
                        default=default_config['reg_anneal'],
                        help="Number of annealing steps where gradually adding the regularisation. What is annealed is specific to each loss.")
@@ -198,7 +218,7 @@ def main(args):
                                        batch_size=args.batch_size,
                                        logger=logger)
         logger.info("Train {} with {} samples".format(args.dataset, len(train_loader.dataset)))
-
+        
         # PREPARES MODEL
         args.img_size = get_img_size(args.dataset)  # stores for metadata
         model = init_specific_model(args.model_type, args.img_size, args.latent_dim)
@@ -218,7 +238,8 @@ def main(args):
                           logger=logger,
                           save_dir=exp_dir,
                           is_progress_bar=not args.no_progress_bar,
-                          gif_visualizer=gif_visualizer)
+                          gif_visualizer=gif_visualizer,
+                          is_utility=args.is_eu)
         trainer(train_loader,
                 epochs=args.epochs,
                 checkpoint_every=args.checkpoint_every,)

@@ -10,6 +10,7 @@ from skimage.io import imread
 from PIL import Image
 from tqdm import tqdm
 import numpy as np
+import scipy as sp
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -22,7 +23,8 @@ DATASETS_DICT = {"mnist": "MNIST",
                  "fashion": "FashionMNIST",
                  "dsprites": "DSprites",
                  "celeba": "CelebA",
-                 "chairs": "Chairs"}
+                 "chairs": "Chairs",
+                 "dice": "Dice"}
 DATASETS = list(DATASETS_DICT.keys())
 
 
@@ -113,6 +115,69 @@ class DisentangledDataset(Dataset, abc.ABC):
         """Download the dataset. """
         pass
 
+class Dice(DisentangledDataset):
+    """ 
+    Data set of die probabilities and outcomes
+    """
+    img_size = (1, 32, 32)
+    files = {"train": "dice"}
+    background_color = COLOUR_WHITE
+
+    def __init__(self, root=os.path.join(DIR, '../data/dice/'), **kwargs):
+        super().__init__(root, [transforms.ToTensor()], **kwargs)
+        self.num_dice = 32
+        self.num_piles = 12
+        self.num_sides = 10
+        self.num_data = 10000
+
+        self.train_data = os.path.join(root, 'train.npy')
+        if(not os.path.exists(self.train_data)):
+            all_data = []
+            # If data doesn't exist make it:
+            for _ in range(self.num_data):
+                piles = []
+                for _ in range(self.num_piles):
+                    #pile = np.random.randint(0, high=1000, size=self.num_dice)
+                    pile = np.random.beta(a=2, b=2, size=self.num_dice)
+                    pile = pile / np.sum(pile)
+                    piles.append(pile)
+                
+                probabilities = []
+                for _ in range(self.num_sides):
+                    #p = sp.stats.uniform.rvs(size=self.num_dice)
+                    p = np.random.beta(a=2, b=2, size=self.num_dice)
+                    p = p / np.sum(p)
+                    probabilities.append(p)
+                
+                outcomes = []
+                for _ in range(self.num_dice):
+                    #outcome = np.random.randint(0, high=1000, size=self.num_sides)
+                    outcome = np.random.beta(a=2, b=2, size=self.num_sides)
+                    outcome = outcome / np.sum(outcome)
+                    outcomes.append(outcome)
+
+                arrays = [np.asarray(piles), np.transpose(np.asarray(outcomes)), np.asarray(probabilities)]
+                data_point = np.vstack(arrays)
+
+                all_data.append(data_point)
+
+            np.save(file=self.train_data, arr=all_data)
+            #print("MADE NEW DATA: ", all_data)
+
+        dataset_zip = np.load(self.train_data)
+        self.imgs = dataset_zip
+
+        print("Loaded dataset with shape: ", dataset_zip.shape)
+
+        #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        #self.imgs = torch.from_numpy(dataset_zip).float().to(device)
+    
+    def __getitem__(self, idx):
+        sample = self.transforms(self.imgs[idx])
+        return sample, 0
+    
+    def download(self):
+        return 
 
 class DSprites(DisentangledDataset):
     """DSprites Dataset from [1].
