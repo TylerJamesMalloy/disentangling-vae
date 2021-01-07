@@ -28,10 +28,7 @@ EXPERIMENTS = ADDITIONAL_EXP + ["{}_{}".format(loss, data)
                                 for loss in LOSSES
                                 for data in DATASETS]
 
-# python main.py dice_mix -d dice -r utility -l betaB --betaB-G 1
-# python main.py dice_utility -d dice -l utility 
-# python main.py dice_betaB -d dice -l betaB
-# python main.py test -d dice -r utility -l betaB --betaB-G 1
+# python main.py dice_mix -d dice -l betaH -e 1000 -u 0.1
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -71,8 +68,11 @@ def parse_arguments(args_to_parse):
                          help='Disables CUDA training, even when have one.')
     general.add_argument('-s', '--seed', type=int, default=default_config['seed'],
                          help='Random seed. Can be `None` for stochastic behavior.')
-    general.add_argument('-is-eu', type=str2bool, nargs='?', const=True, default=False,
-                         help='Determine if the EU loss wil be calculated and saved.')
+                         
+    general.add_argument('-is-eu', type=str2bool, nargs='?', const=True, default=True,
+                         help='Determine if the EU loss will be calculated and saved.')
+    general.add_argument('-u', type=float, default=default_config['u'],
+                         help='Utility weight for loss calculation')
 
     # Learning options
     training = parser.add_argument_group('Training specific options')

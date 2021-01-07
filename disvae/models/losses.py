@@ -25,13 +25,14 @@ def get_loss_f(loss_name, **kwargs_parse):
     kwargs_all = dict(rec_dist=kwargs_parse["rec_dist"],
                       steps_anneal=kwargs_parse["reg_anneal"])
     if loss_name == "betaH":
-        return BetaHLoss(beta=kwargs_parse["betaH_B"], **kwargs_all)
+        return BetaHLoss(beta=kwargs_parse["betaH_B"], u=kwargs_parse["u"], **kwargs_all)
     elif loss_name == "VAE":
-        return BetaHLoss(beta=1, **kwargs_all)
+        return BetaHLoss(beta=1, u=kwargs_parse["u"], **kwargs_all)
     elif loss_name == "betaB":
         return BetaBLoss(C_init=kwargs_parse["betaB_initC"],
                          C_fin=kwargs_parse["betaB_finC"],
                          gamma=kwargs_parse["betaB_G"],
+                         u=kwargs_parse["u"],
                          **kwargs_all)
     elif loss_name == "factor":
         return FactorKLoss(kwargs_parse["device"],
@@ -45,10 +46,6 @@ def get_loss_f(loss_name, **kwargs_parse):
                           beta=kwargs_parse["btcvae_B"],
                           gamma=kwargs_parse["btcvae_G"],
                           **kwargs_all)
-    elif loss_name == "utility":
-        return UtilityLoss(C_init=kwargs_parse["betaB_initC"],
-                           C_fin=kwargs_parse["betaB_finC"],
-                           **kwargs_all)
     else:
         assert loss_name not in LOSSES
         raise ValueError("Uknown loss : {}".format(loss_name))
@@ -137,9 +134,10 @@ class BetaHLoss(BaseLoss):
         a constrained variational framework." (2016).
     """
 
-    def __init__(self, beta=4, **kwargs):
+    def __init__(self, beta=4, u=0.1, **kwargs):
         super().__init__(**kwargs)
         self.beta = beta
+        self.u = u
 
     def __call__(self, data, recon_data, latent_dist, is_train, storer, **kwargs):
         storer = self._pre_call(is_train, storer)
@@ -150,7 +148,10 @@ class BetaHLoss(BaseLoss):
         kl_loss = _kl_normal_loss(*latent_dist, storer)
         anneal_reg = (linear_annealing(0, 1, self.n_train_steps, self.steps_anneal)
                       if is_train else 1)
-        loss = rec_loss + anneal_reg * (self.beta * kl_loss)
+        
+        utility_loss = _utility_loss(data=data, recon_data=recon_data)
+
+        loss = rec_loss + (self.u * utility_loss) + anneal_reg * (self.beta * kl_loss) 
 
         if storer is not None:
             storer['loss'].append(loss.item())
@@ -182,11 +183,12 @@ class BetaBLoss(BaseLoss):
         $\beta$-VAE." arXiv preprint arXiv:1804.03599 (2018).
     """
 
-    def __init__(self, C_init=0., C_fin=20., gamma=100., **kwargs):
+    def __init__(self, C_init=0., C_fin=20., gamma=100., u=0.1, **kwargs):
         super().__init__(**kwargs)
         self.gamma = gamma
         self.C_init = C_init
         self.C_fin = C_fin
+        self.u = u
 
     def __call__(self, data, recon_data, latent_dist, is_train, storer, **kwargs):
         storer = self._pre_call(is_train, storer)
@@ -199,7 +201,9 @@ class BetaBLoss(BaseLoss):
         C = (linear_annealing(self.C_init, self.C_fin, self.n_train_steps, self.steps_anneal)
              if is_train else self.C_fin)
 
-        loss = rec_loss + self.gamma * (kl_loss - C).abs()
+        utility_loss = _utility_loss(data=data, recon_data=recon_data)
+
+        loss = rec_loss + (self.u * utility_loss)  + self.gamma * (kl_loss - C).abs()
 
         if storer is not None:
             storer['loss'].append(loss.item())
@@ -208,7 +212,7 @@ class BetaBLoss(BaseLoss):
 
 class UtilityLoss(BaseLoss):
     """
-    Compute the Expected Utility loss as in
+    Compute the Expected Utility loss as in Malloy et al. 
 
     Parameters
     ----------
@@ -226,8 +230,7 @@ class UtilityLoss(BaseLoss):
 
     References
     ----------
-        [1] Burgess, Christopher P., et al. "Understanding disentangling in
-        $\beta$-VAE." arXiv preprint arXiv:1804.03599 (2018).
+        [1] Mallot et al. not yet published (2021)
     """
 
     def __init__(self, C_init=0., C_fin=20., **kwargs):
@@ -238,16 +241,12 @@ class UtilityLoss(BaseLoss):
     def __call__(self, data, recon_data, latent_dist, is_train, storer, **kwargs):
         storer = self._pre_call(is_train, storer)
 
-        rec_loss = _reconstruction_loss(data, recon_data,
-                                        storer=storer,
-                                        distribution="utility")
-
         C = (linear_annealing(self.C_init, self.C_fin, self.n_train_steps, self.steps_anneal)
              if is_train else self.C_fin)
 
         kl_loss = _kl_normal_loss(*latent_dist, storer)
 
-        loss = rec_loss + 0 * (kl_loss - C).abs()
+        loss = _utility_loss(data=data, recon_data=recon_data)
 
         if storer is not None:
             storer['loss'].append(loss.item())
@@ -446,7 +445,6 @@ def _utility_loss(data=None, recon_data=None):
     batch_utility_loss = getUtilityLoss(data=data, recon_data=recon_data)
     return torch.cuda.FloatTensor([batch_utility_loss])
 
-
 def _reconstruction_loss(data, recon_data, distribution="bernoulli", storer=None):
     """
     Calculates the per image reconstruction loss for a batch of data. I.e. negative
@@ -494,8 +492,6 @@ def _reconstruction_loss(data, recon_data, distribution="bernoulli", storer=None
         loss = F.l1_loss(recon_data, data, reduction="sum")
         loss = loss * 3  # emperical value to give similar values than bernoulli => use same hyperparam
         loss = loss * (loss != 0)  # masking to avoid nan
-    elif distribution == "utility":
-        loss = _utility_loss(data=data, recon_data=recon_data)
     else:
         assert distribution not in RECON_DIST
         raise ValueError("Unkown distribution: {}".format(distribution))

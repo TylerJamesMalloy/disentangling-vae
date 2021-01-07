@@ -134,27 +134,37 @@ class Dice(DisentangledDataset):
         if(not os.path.exists(self.train_data)):
             all_data = []
             # If data doesn't exist make it:
+            alphas = np.random.beta(a=5, b=5, size=self.num_piles) * 100
+            betas  = np.random.beta(a=5, b=5, size=self.num_piles) * 100
+            print(" alphas ", alphas)
+            print(" betas ",  betas)
+
             for _ in range(self.num_data):
                 piles = []
-                for _ in range(self.num_piles):
-                    #pile = np.random.randint(0, high=1000, size=self.num_dice)
-                    pile = np.random.beta(a=2, b=2, size=self.num_dice)
-                    pile = pile / np.sum(pile)
-                    piles.append(pile)
                 
+                for index in range(self.num_piles):
+                    pile = np.zeros(32)
+                    sample = np.random.beta(a=alphas[index], b=betas[index], size=1000)
+                    for value in sample:
+                        for index in range(32):
+                            if(value < ((index + 1)/32) and value >= (index/32)):
+                                pile[index] += 1
+                
+                    pile = pile / np.sum(pile)
+                    piles.append(pile) 
+
                 probabilities = []
                 for _ in range(self.num_sides):
-                    #p = sp.stats.uniform.rvs(size=self.num_dice)
                     p = np.random.beta(a=2, b=2, size=self.num_dice)
                     p = p / np.sum(p)
                     probabilities.append(p)
                 
                 outcomes = []
                 for _ in range(self.num_dice):
-                    #outcome = np.random.randint(0, high=1000, size=self.num_sides)
                     outcome = np.random.beta(a=2, b=2, size=self.num_sides)
-                    outcome = outcome / np.sum(outcome)
                     outcomes.append(outcome)
+                
+                outcomes = np.sort(outcomes)
 
                 arrays = [np.asarray(piles), np.transpose(np.asarray(outcomes)), np.asarray(probabilities)]
                 data_point = np.vstack(arrays)

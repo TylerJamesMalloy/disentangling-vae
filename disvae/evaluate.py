@@ -14,6 +14,8 @@ from disvae.models.losses import get_loss_f
 from disvae.utils.math import log_density_gaussian
 from disvae.utils.modelIO import save_metadata
 
+from disvae.utils.utility import getUtilityLoss
+
 TEST_LOSSES_FILE = "test_losses.log"
 METRICS_FILENAME = "metrics.log"
 METRIC_HELPERS_FILE = "metric_helpers.pth"
@@ -94,7 +96,7 @@ class Evaluator:
         if is_utility: 
             self.logger.info('Computing expected utility...')
             utilities = self.compute_utilities(data_loader)
-            self.logger.info('Losses: {}'.format(utilities))
+            self.logger.info('Utility Losses: {}'.format(utilities))
             save_metadata(utilities, self.save_dir, filename=TEST_UTILITY_FILE)
 
         if is_still_training:
@@ -111,7 +113,16 @@ class Evaluator:
         ----------
         data_loader: torch.utils.data.DataLoader
         """
-        return None 
+        storer = defaultdict(list)
+        for data, _ in tqdm(dataloader, leave=False, disable=not self.is_progress_bar):
+            data = data.to(self.device)
+            recon_data, latent_dist, latent_sample = self.model(data)
+            data = np.squeeze(data.detach().cpu().numpy())
+            recon_data = np.squeeze(recon_data.detach().cpu().numpy())
+            
+            utility_loss = getUtilityLoss(data=data, recon_data=recon_data, flag=True)
+
+            return utility_loss
 
     def compute_losses(self, dataloader):
         """Compute all test losses.
@@ -125,8 +136,8 @@ class Evaluator:
             data = data.to(self.device)
 
             try:
-                recon_batch, latent_dist, latent_sample = self.model(data)
-                _ = self.loss_f(data, recon_batch, latent_dist, self.model.training,
+                recon_data, latent_dist, latent_sample = self.model(data)
+                _ = self.loss_f(data, recon_data, latent_dist, self.model.training,
                                 storer, latent_sample=latent_sample)
             except ValueError:
                 # for losses that use multiple optimizers (e.g. Factor)

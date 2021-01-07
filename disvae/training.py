@@ -87,7 +87,7 @@ class Trainer():
         for epoch in range(epochs):
             storer = defaultdict(list)
             mean_epoch_loss, eu_epoch_loss = self._train_epoch(data_loader, storer, epoch)
-            self.logger.info('Epoch: {} Average reconstruction loss: {:.2f} Expected Utility loss {:.8f}'.format(epoch + 1, mean_epoch_loss, eu_epoch_loss))
+            self.logger.info('Epoch: {} Average reconstruction loss: {:.4f} Expected Utility loss {:.8f}'.format(epoch + 1, mean_epoch_loss, eu_epoch_loss))
             self.losses_logger.log(epoch, storer)
 
             utility_loss = {"loss": eu_epoch_loss, "epoch": epoch}
@@ -176,7 +176,6 @@ class Trainer():
             if(self.is_utility):
                 return (loss.item(), getUtilityLoss(data=data, recon_data=recon_data))
                 
-
         except ValueError:
             # for losses that use multiple optimizers (e.g. Factor)
             loss = self.loss_f.call_optimize(data, self.model, self.optimizer, storer)
