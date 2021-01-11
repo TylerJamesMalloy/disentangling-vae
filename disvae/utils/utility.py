@@ -35,7 +35,7 @@ def getUtilityLoss(data=None, recon_data=None, flag=False):
         recon_dice_EUs = []
         for die_index in range(32):
             die_datum_probabilities =  datum_probabilities[:,die_index]
-            if(np.sum(recon_probabilities[:,die_index]) > 1e-12): # If the sum of the reconstructed probabiltiies is too small to matter, act randomly 
+            if(np.sum(recon_probabilities[:,die_index]) > 0): # If the sum of the reconstructed probabiltiies is too small to matter, act randomly 
                 die_recon_probabilities =  recon_probabilities[:,die_index] / np.sum(recon_probabilities[:,die_index])
             else:
                 die_recon_probabilities = np.ones(10) / 10
@@ -53,7 +53,7 @@ def getUtilityLoss(data=None, recon_data=None, flag=False):
         data_pile_EUs = []
         recon_pile_EUs = []
         for index, (recon_pile, datum_pile) in enumerate(zip(recon_piles, datum_piles)): 
-            if(np.sum(recon_pile) > 1e-12):
+            if(np.sum(recon_pile) > 0):
                 recon_pile_probability = recon_pile / np.sum(recon_pile)
             else:
                 recon_pile_probability = np.ones(32) / 32
@@ -70,7 +70,7 @@ def getUtilityLoss(data=None, recon_data=None, flag=False):
         data_eu = np.max(data_pile_EUs)
         softmax_inverse_temp = 10
         denominator = np.sum(exp_normalize(recon_pile_EUs * softmax_inverse_temp))
-        if(denominator > 1e-12):
+        if(denominator > 0):
             recon_policy = exp_normalize(recon_pile_EUs * softmax_inverse_temp) / denominator
         else: 
             recon_policy = np.ones(12) / 12

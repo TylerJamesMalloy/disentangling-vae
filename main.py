@@ -28,7 +28,10 @@ EXPERIMENTS = ADDITIONAL_EXP + ["{}_{}".format(loss, data)
                                 for loss in LOSSES
                                 for data in DATASETS]
 
-# python main.py dice_mix -d dice -l betaH -e 1000 -u 0.1
+# python main.py dice_u0_e1000 -d dice -l betaH -e 1000 -u 0
+# python main.py dice_u10_e1000 -d dice -l betaH -e 1000 -u 10
+# python main.py dice_u100_e1000 -d dice -l betaH -e 1000 -u 100
+# python main.py dice_u1000_e1000 -d dice -l betaH -e 1000 -u 100000 --betaH-B 2
 
 def str2bool(v):
     if isinstance(v, bool):

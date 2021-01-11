@@ -139,11 +139,22 @@ class Dice(DisentangledDataset):
             print(" alphas ", alphas)
             print(" betas ",  betas)
 
+            probabilities = []
+            for _ in range(self.num_sides):
+                p = np.random.beta(a=2, b=2, size=self.num_dice)
+                p = p / np.sum(p)
+                probabilities.append(p)
+            
+            outcomes = []
+            for _ in range(self.num_dice):
+                outcome = np.random.beta(a=2, b=2, size=self.num_sides)
+                outcomes.append(outcome)
+
             for _ in range(self.num_data):
                 piles = []
                 
                 for index in range(self.num_piles):
-                    pile = np.zeros(32)
+                    pile = np.ones(32)
                     sample = np.random.beta(a=alphas[index], b=betas[index], size=1000)
                     for value in sample:
                         for index in range(32):
@@ -152,19 +163,6 @@ class Dice(DisentangledDataset):
                 
                     pile = pile / np.sum(pile)
                     piles.append(pile) 
-
-                probabilities = []
-                for _ in range(self.num_sides):
-                    p = np.random.beta(a=2, b=2, size=self.num_dice)
-                    p = p / np.sum(p)
-                    probabilities.append(p)
-                
-                outcomes = []
-                for _ in range(self.num_dice):
-                    outcome = np.random.beta(a=2, b=2, size=self.num_sides)
-                    outcomes.append(outcome)
-                
-                outcomes = np.sort(outcomes)
 
                 arrays = [np.asarray(piles), np.transpose(np.asarray(outcomes)), np.asarray(probabilities)]
                 data_point = np.vstack(arrays)
