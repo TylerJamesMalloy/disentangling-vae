@@ -14,7 +14,7 @@ from disvae import init_specific_model, Trainer, Evaluator
 from disvae.utils.modelIO import save_model, load_model, load_metadata
 from disvae.models.losses import LOSSES, RECON_DIST, get_loss_f
 from disvae.models.vae import MODELS
-from utils.datasets import get_dataloaders, get_img_size, DATASETS
+from utils.datasets import get_dataloaders, get_img_size, get_gendata, DATASETS
 from utils.helpers import (create_safe_directory, get_device, set_seed, get_n_param,
                            get_config_section, update_namespace_, FormatterNoDuplicate)
 from utils.visualize import GifTraversalsTraining
@@ -28,10 +28,22 @@ EXPERIMENTS = ADDITIONAL_EXP + ["{}_{}".format(loss, data)
                                 for loss in LOSSES
                                 for data in DATASETS]
 
-# python main.py dice_u0_e1000 -d dice -l betaH -e 1000 -u 0
-# python main.py dice_u10_e1000 -d dice -l betaH -e 1000 -u 10
-# python main.py dice_u100_e1000 -d dice -l betaH -e 1000 -u 100
-# python main.py dice_u1000_e1000 -d dice -l betaH -e 1000 -u 100000 --betaH-B 2
+# Normal B-VAE: B = 4
+# python main.py dice_u0_e1000 -d dice -l betaH -e 1000 -u 0 --checkpoint-every 10
+# python main.py dice_u10_e1000 -d dice -l betaH -e 1000 -u 10 --checkpoint-every 10
+# python main.py dice_u100_e1000 -d dice -l betaH -e 1000 -u 100 --checkpoint-every 10
+# python main.py dice_u1000_e1000 -d dice -l betaH -e 1000 -u 1000 --checkpoint-every 10
+
+# varying beta
+# python main.py dice_b10_u10_e10 -d dice -l betaH -e 10 -u 10 --betaH-B 10 --checkpoint-every 1
+# python main.py dice_b100_u10_e10 -d dice -l betaH -e 10 -u 10 --betaH-B 100 --checkpoint-every 1
+# python main.py dice_b1000_u10_e10 -d dice -l betaH -e 10 -u 10 --betaH-B 1000 --checkpoint-every 1
+
+# Normal VAE: 
+# python main.py dice_u0_e1000 -d dice -l betaH -e 1000 -u 0 --betaH-B 1 --checkpoint-every 10
+# python main.py dice_u10_e1000 -d dice -l betaH -e 1000 -u 10 --betaH-B 1 --checkpoint-every 10
+# python main.py dice_u100_e1000 -d dice -l betaH -e 1000 -u 100 --betaH-B 1 --checkpoint-every 10
+# python main.py dice_u1000_e1000 -d dice -l betaH -e 1000 -u 1000 --betaH-B 1 --checkpoint-every 10
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -155,6 +167,12 @@ def parse_arguments(args_to_parse):
     evaluation.add_argument('--is-eval-only', action='store_true',
                             default=default_config['is_eval_only'],
                             help='Whether to only evaluate using precomputed model `name`.')
+    evaluation.add_argument('--is-gen-only', action='store_true',
+                            default=default_config['is_gen_only'],
+                            help='Whether to only evaluate generalization using precomputed model `name`.')
+    evaluation.add_argument('--model-num',  type=str,
+                            default=default_config['model_num'],
+                            help='Dimension of the latent variable.')
     evaluation.add_argument('--is-metrics', action='store_true',
                             default=default_config['is_metrics'],
                             help="Whether to compute the disentangled metrcics. Currently only possible with `dsprites` as it is the only dataset with known true factors of variations.")
@@ -207,7 +225,7 @@ def main(args):
     exp_dir = os.path.join(RES_DIR, args.name)
     logger.info("Root directory for saving and loading experiments: {}".format(exp_dir))
 
-    if not args.is_eval_only:
+    if not args.is_eval_only and not args.is_gen_only:
 
         create_safe_directory(exp_dir, logger=logger)
 
@@ -251,6 +269,7 @@ def main(args):
         save_model(trainer.model, exp_dir, metadata=vars(args))
 
     if args.is_metrics or not args.no_test:
+        #model = load_model(exp_dir, is_gpu=not args.no_cuda, filename="model-" + args.model_num + ".pt")
         model = load_model(exp_dir, is_gpu=not args.no_cuda)
         metadata = load_metadata(exp_dir)
         # TO-DO: currently uses train datatset
@@ -270,6 +289,29 @@ def main(args):
 
         evaluator(test_loader, is_metrics=args.is_metrics, is_losses=not args.no_test)
 
+    if args.is_gen_only: 
+        model = load_model(exp_dir, is_gpu=not args.no_cuda)
+        metadata = load_metadata(exp_dir)
+        # TO-DO: currently uses train datatset
+
+        gen_datasets = ["gen1.npy", "gen2.npy", "gen3.npy", "gen4.npy", "gen5.npy", "gen6.npy", "gen7.npy", "gen8.npy", "gen9.npy", "gen10.npy"]
+
+        for gen_dataset in gen_datasets: 
+            test_loader = get_gendata(gen_dataset,
+                                        batch_size=args.eval_batchsize,
+                                        shuffle=False,
+                                        logger=logger)
+            loss_f = get_loss_f(args.loss,
+                                n_data=len(test_loader.dataset),
+                                device=device,
+                                **vars(args))
+            evaluator = Evaluator(model, loss_f,
+                                device=device,
+                                logger=logger,
+                                save_dir=exp_dir,
+                                is_progress_bar=not args.no_progress_bar)
+
+            evaluator(test_loader, is_metrics=args.is_metrics, is_losses=not args.no_test)
 
 if __name__ == '__main__':
     args = parse_arguments(sys.argv[1:])

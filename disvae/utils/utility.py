@@ -61,8 +61,8 @@ def getUtilityLoss(data=None, recon_data=None, flag=False):
 
             datum_pile_probability = datum_pile / np.sum(datum_pile)
 
-            recon_pile_EUs.append(np.sum(recon_pile_probability * (100 * recon_dice_EUs))) # adjust the eus to make them more varied
-            data_pile_EUs.append(np.sum(datum_pile_probability * (100 * data_dice_EUs)))   # adjust the eus to make them more varied
+            recon_pile_EUs.append(np.sum(recon_pile_probability * (100 * recon_dice_EUs))) # ecale eus 
+            data_pile_EUs.append(np.sum(datum_pile_probability * (100 * data_dice_EUs)))   # scale eus 
         
         data_pile_EUs = np.asarray(data_pile_EUs)
         recon_pile_EUs = np.asarray(recon_pile_EUs)
@@ -81,7 +81,7 @@ def getUtilityLoss(data=None, recon_data=None, flag=False):
 
         if(eu_losses != eu_losses):
             print(" Got NAN expected utility loss")
-            print( " Loss ", data_eu - recon_eu)
+            print(" Loss ", data_eu - recon_eu)
             print(" Data EU ", data_eu)
             print(" Recon EU ", recon_eu)
             print(" Recon Policy", recon_policy)

@@ -103,29 +103,6 @@ class Trainer():
             if epoch % checkpoint_every == 0:
                 save_model(self.model, self.save_dir,
                            filename="model-{}.pt".format(epoch))
-
-                """model = load_model(self.save_dir, filename="model-{}.pt".format(epoch))
-                metadata = load_metadata(self.save_dir)
-                print(metadata)
-                # TO-DO: currently uses train datatset
-                test_loader = get_dataloaders("dice",
-                                            batch_size=args.eval_batchsize,
-                                            shuffle=False,
-                                            logger=logger)
-                loss_f = get_loss_f(args.loss,
-                                    n_data=len(test_loader.dataset),
-                                    device=device,
-                                    **vars(args))
-                evaluator = Evaluator(model, loss_f,
-                                    device=device,
-                                    logger=logger,
-                                    save_dir=self.save_dir,
-                                    is_progress_bar=not args.no_progress_bar)
-
-                eval_return = evaluator(test_loader, is_metrics=args.is_metrics, is_losses=not args.no_test)
-
-                print(eval_return)
-                assert(False)"""
         
         if(self.is_utility):
             Utility_Losses.to_pickle(os.path.join(self.save_dir, "utility.pkl"))

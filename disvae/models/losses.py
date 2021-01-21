@@ -16,7 +16,7 @@ from disvae.utils.math import (log_density_gaussian, log_importance_weight_matri
 from disvae.utils.utility import getUtilityLoss
 
 LOSSES = ["VAE", "betaH", "betaB", "factor", "btcvae", "utility"]
-RECON_DIST = ["bernoulli", "laplace", "gaussian", "utility"]
+RECON_DIST = ["bernoulli", "laplace", "gaussian"]
 
 
 # TO-DO: clean n_data and device

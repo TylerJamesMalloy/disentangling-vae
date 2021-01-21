@@ -100,6 +100,7 @@ def load_model(directory, is_gpu=True, filename=MODEL_FILENAME):
     model_type = metadata["model_type"]
 
     path_to_model = os.path.join(directory, filename)
+    print(path_to_model)
     model = _get_model(model_type, img_size, latent_dim, device, path_to_model)
     return model
 

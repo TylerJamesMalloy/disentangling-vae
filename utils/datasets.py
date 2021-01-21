@@ -47,6 +47,29 @@ def get_background(dataset):
     """Return the image background color."""
     return get_dataset(dataset).background_color
 
+def get_gendata(dataset, file=None, name=None, shuffle=True, pin_memory=True,
+                    batch_size=128, logger=logging.getLogger(__name__), **kwargs):
+    """A generic data loader
+
+    Parameters
+    ----------
+    dataset : {"mnist", "fashion", "dsprites", "celeba", "chairs"}
+        Name of the dataset to load
+
+    root : str
+        Path to the dataset root. If `None` uses the default one.
+
+    kwargs :
+        Additional arguments to `DataLoader`. Default values are modified.
+    """
+    pin_memory = pin_memory and torch.cuda.is_available  # only pin if GPU available
+    Dataset = GenDice(file=file)
+    dataset = Dataset(logger=logger) if root is None else Dataset(root=root, logger=logger)
+    return DataLoader(dataset,
+                      batch_size=batch_size,
+                      shuffle=shuffle,
+                      pin_memory=pin_memory,
+                      **kwargs)
 
 def get_dataloaders(dataset, root=None, shuffle=True, pin_memory=True,
                     batch_size=128, logger=logging.getLogger(__name__), **kwargs):
@@ -115,7 +138,8 @@ class DisentangledDataset(Dataset, abc.ABC):
         """Download the dataset. """
         pass
 
-class Dice(DisentangledDataset):
+
+class GenDice(): 
     """ 
     Data set of die probabilities and outcomes
     """
@@ -123,32 +147,31 @@ class Dice(DisentangledDataset):
     files = {"train": "dice"}
     background_color = COLOUR_WHITE
 
-    def __init__(self, root=os.path.join(DIR, '../data/dice/'), **kwargs):
+    def __init__(self, file=None, root=os.path.join(DIR, '../data/dice/'), **kwargs):
         super().__init__(root, [transforms.ToTensor()], **kwargs)
         self.num_dice = 32
         self.num_piles = 12
         self.num_sides = 10
-        self.num_data = 10000
+        self.num_data = 1000
 
-        self.train_data = os.path.join(root, 'train.npy')
+        self.train_data = os.path.join(root, file)
         if(not os.path.exists(self.train_data)):
             all_data = []
             # If data doesn't exist make it:
             alphas = np.random.beta(a=5, b=5, size=self.num_piles) * 100
             betas  = np.random.beta(a=5, b=5, size=self.num_piles) * 100
-            print(" alphas ", alphas)
-            print(" betas ",  betas)
+            print("pile alphas ", alphas)
+            print("pile betas ",  betas)
 
-            probabilities = []
-            for _ in range(self.num_sides):
-                p = np.random.beta(a=2, b=2, size=self.num_dice)
-                p = p / np.sum(p)
-                probabilities.append(p)
-            
-            outcomes = []
-            for _ in range(self.num_dice):
-                outcome = np.random.beta(a=2, b=2, size=self.num_sides)
-                outcomes.append(outcome)
+            probability_alphas = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            probability_betas  = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            print("probability alphas ", probability_alphas)
+            print("probability betas ",  probability_betas)
+
+            outcome_alphas = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            outcome_betas  = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            print("outcome alphas ", outcome_alphas)
+            print("outcome betas ",  outcome_betas)
 
             for _ in range(self.num_data):
                 piles = []
@@ -163,8 +186,21 @@ class Dice(DisentangledDataset):
                 
                     pile = pile / np.sum(pile)
                     piles.append(pile) 
+                
+                probabilities = []
+                for i in range(0,self.num_dice):
+                    p = np.random.beta(a=probability_alphas[i], b=probability_betas[i], size=self.num_sides)
+                    p = p / np.sum(p)
+                    p = np.sort(p)
+                    probabilities.append(p)
+                    
+                outcomes = []
+                for i in range(0,self.num_dice):
+                    outcome = np.random.beta(a=outcome_alphas[i], b=outcome_betas[i], size=self.num_sides)
+                    outcome = np.sort(outcome)
+                    outcomes.append(outcome)
 
-                arrays = [np.asarray(piles), np.transpose(np.asarray(outcomes)), np.asarray(probabilities)]
+                arrays = [np.asarray(piles), np.transpose(np.asarray(outcomes)), np.transpose(np.asarray(probabilities))]
                 data_point = np.vstack(arrays)
 
                 all_data.append(data_point)
@@ -175,7 +211,78 @@ class Dice(DisentangledDataset):
         dataset_zip = np.load(self.train_data)
         self.imgs = dataset_zip
 
-        print("Loaded dataset with shape: ", dataset_zip.shape)
+
+class Dice(DisentangledDataset):
+    """ 
+    Data set of die probabilities and outcomes
+    """
+    img_size = (1, 32, 32)
+    files = {"train": "dice"}
+    background_color = COLOUR_WHITE
+
+    def __init__(self, root=os.path.join(DIR, '../data/dice/'), **kwargs):
+        super().__init__(root, [transforms.ToTensor()], **kwargs)
+        self.num_dice = 32
+        self.num_piles = 12
+        self.num_sides = 10
+        self.num_data = 1000
+
+        self.train_data = os.path.join(root, 'train.npy')
+        if(not os.path.exists(self.train_data)):
+            all_data = []
+            # If data doesn't exist make it:
+            alphas = np.random.beta(a=5, b=5, size=self.num_piles) * 100
+            betas  = np.random.beta(a=5, b=5, size=self.num_piles) * 100
+            print("pile alphas ", alphas)
+            print("pile betas ",  betas)
+
+            probability_alphas = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            probability_betas  = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            print("probability alphas ", probability_alphas)
+            print("probability betas ",  probability_betas)
+
+            outcome_alphas = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            outcome_betas  = np.random.beta(a=5, b=5, size=self.num_dice) * 100
+            print("outcome alphas ", outcome_alphas)
+            print("outcome betas ",  outcome_betas)
+
+            for _ in range(self.num_data):
+                piles = []
+                
+                for index in range(self.num_piles):
+                    pile = np.ones(32)
+                    sample = np.random.beta(a=alphas[index], b=betas[index], size=1000)
+                    for value in sample:
+                        for index in range(32):
+                            if(value < ((index + 1)/32) and value >= (index/32)):
+                                pile[index] += 1
+                
+                    pile = pile / np.sum(pile)
+                    piles.append(pile) 
+                
+                probabilities = []
+                for i in range(0,self.num_dice):
+                    p = np.random.beta(a=probability_alphas[i], b=probability_betas[i], size=self.num_sides)
+                    p = p / np.sum(p)
+                    p = np.sort(p)
+                    probabilities.append(p)
+                    
+                outcomes = []
+                for i in range(0,self.num_dice):
+                    outcome = np.random.beta(a=outcome_alphas[i], b=outcome_betas[i], size=self.num_sides)
+                    outcome = np.sort(outcome)
+                    outcomes.append(outcome)
+
+                arrays = [np.asarray(piles), np.transpose(np.asarray(outcomes)), np.transpose(np.asarray(probabilities))]
+                data_point = np.vstack(arrays)
+
+                all_data.append(data_point)
+
+            np.save(file=self.train_data, arr=all_data)
+            #print("MADE NEW DATA: ", all_data)
+
+        dataset_zip = np.load(self.train_data)
+        self.imgs = dataset_zip
 
         #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         #self.imgs = torch.from_numpy(dataset_zip).float().to(device)
