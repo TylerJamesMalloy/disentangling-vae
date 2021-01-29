@@ -4,6 +4,9 @@ import sys
 import os
 from configparser import ConfigParser
 
+import numpy as np
+import pandas as pd 
+
 import torch 
 import ctypes
 ctypes.cdll.LoadLibrary('caffe2_nvrtc.dll')
@@ -27,23 +30,6 @@ ADDITIONAL_EXP = ['custom', "debug", "best_celeba", "best_dsprites"]
 EXPERIMENTS = ADDITIONAL_EXP + ["{}_{}".format(loss, data)
                                 for loss in LOSSES
                                 for data in DATASETS]
-
-# Normal B-VAE: B = 4
-# python main.py dice_u0_e1000 -d dice -l betaH -e 1000 -u 0 --checkpoint-every 10
-# python main.py dice_u10_e1000 -d dice -l betaH -e 1000 -u 10 --checkpoint-every 10
-# python main.py dice_u100_e1000 -d dice -l betaH -e 1000 -u 100 --checkpoint-every 10
-# python main.py dice_u1000_e1000 -d dice -l betaH -e 1000 -u 1000 --checkpoint-every 10
-
-# varying beta
-# python main.py dice_b10_u10_e10 -d dice -l betaH -e 10 -u 10 --betaH-B 10 --checkpoint-every 1
-# python main.py dice_b100_u10_e10 -d dice -l betaH -e 10 -u 10 --betaH-B 100 --checkpoint-every 1
-# python main.py dice_b1000_u10_e10 -d dice -l betaH -e 10 -u 10 --betaH-B 1000 --checkpoint-every 1
-
-# Normal VAE: 
-# python main.py dice_u0_e1000 -d dice -l betaH -e 1000 -u 0 --betaH-B 1 --checkpoint-every 10
-# python main.py dice_u10_e1000 -d dice -l betaH -e 1000 -u 10 --betaH-B 1 --checkpoint-every 10
-# python main.py dice_u100_e1000 -d dice -l betaH -e 1000 -u 100 --betaH-B 1 --checkpoint-every 10
-# python main.py dice_u1000_e1000 -d dice -l betaH -e 1000 -u 1000 --betaH-B 1 --checkpoint-every 10
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -202,6 +188,10 @@ def parse_arguments(args_to_parse):
 
     return args
 
+def exp_normalize(x):
+    b = x.max()
+    y = np.exp(x - b)
+    return y / y.sum()
 
 def main(args):
     """Main train and evaluation function.
@@ -268,7 +258,7 @@ def main(args):
         # SAVE MODEL AND EXPERIMENT INFORMATION
         save_model(trainer.model, exp_dir, metadata=vars(args))
 
-    if args.is_metrics or not args.no_test:
+    if (args.is_metrics or not args.no_test) and not args.is_gen_only:
         #model = load_model(exp_dir, is_gpu=not args.no_cuda, filename="model-" + args.model_num + ".pt")
         model = load_model(exp_dir, is_gpu=not args.no_cuda)
         metadata = load_metadata(exp_dir)
@@ -294,25 +284,69 @@ def main(args):
         metadata = load_metadata(exp_dir)
         # TO-DO: currently uses train datatset
 
-        gen_datasets = ["gen1.npy", "gen2.npy", "gen3.npy", "gen4.npy", "gen5.npy", "gen6.npy", "gen7.npy", "gen8.npy", "gen9.npy", "gen10.npy"]
+        gen_datasets = ["train.npy"]
 
         for gen_dataset in gen_datasets: 
-            test_loader = get_gendata(gen_dataset,
+            test_loader = get_gendata(  genData = gen_dataset,
                                         batch_size=args.eval_batchsize,
                                         shuffle=False,
                                         logger=logger)
-            loss_f = get_loss_f(args.loss,
-                                n_data=len(test_loader.dataset),
-                                device=device,
-                                **vars(args))
-            evaluator = Evaluator(model, loss_f,
-                                device=device,
-                                logger=logger,
-                                save_dir=exp_dir,
-                                is_progress_bar=not args.no_progress_bar)
+            
+            data_index = 0
+            recon_diff = pd.DataFrame()
+            for data, _ in test_loader:
+                data_index += 1
 
-            evaluator(test_loader, is_metrics=args.is_metrics, is_losses=not args.no_test)
+                if(data_index > 100):
+                    continue 
 
+                datum = data.to(device)#.cpu().numpy()
+                recon_datum, latent_dist, latent_sample = model(datum)
+
+                recon_data = np.squeeze(recon_datum.detach().cpu().numpy())
+                stimulus_data = np.squeeze(datum.detach().cpu().numpy())
+
+                for recon_datum, stimulus_datum in zip(recon_data, stimulus_data):
+                    # Probability of drawing each of the 32 dice within each of the 12 piles 
+                    recon_piles = recon_datum[0:12]
+                    datum_piles = stimulus_datum[0:12]
+
+                    # probabilities of each of the 10 sides for each of the 32 dice 
+                    recon_probabilities = recon_datum[22:32]
+                    datum_probabilities = stimulus_datum[22:32] 
+
+                    # normalized outcomes of each of the 10 sides for each of the 32 dice
+                    recon_outcomes = recon_datum[12:22]
+                    datum_outcomes = stimulus_datum[12:22]
+
+                    # most common die outcome and utility reconstruction accuracy: 
+                    common_die_index = np.argmax(np.sum(datum_piles, axis=0))
+                    common_prob_recon = recon_probabilities[:,common_die_index] / np.sum(recon_probabilities[:,common_die_index])
+                    common_prob_datum = datum_probabilities[:,common_die_index] / np.sum(datum_probabilities[:,common_die_index])
+
+                    common_outcome_recon = recon_outcomes[:,common_die_index] / np.sum(recon_outcomes[:,common_die_index])
+                    common_outcome_datum = datum_outcomes[:,common_die_index] / np.sum(datum_outcomes[:,common_die_index])
+
+                    common_mse  = np.mean(np.abs(common_prob_datum - common_prob_recon)**2) + np.mean(np.abs(common_outcome_recon - common_outcome_datum)**2)
+                    common_error = np.mean(np.abs(common_prob_datum - common_prob_recon)) + np.mean(np.abs(common_outcome_recon - common_outcome_datum))
+                    common_meandiff = np.mean(common_prob_datum - common_prob_recon) + np.mean(common_outcome_recon - common_outcome_datum)
+                    # Least common die outcome and utility reconstruction accuracy: 
+                    uncommon_die_index = np.argmin(np.sum(datum_piles, axis=0))
+                    uncommon_prob_recon = recon_probabilities[:,uncommon_die_index] / np.sum(recon_probabilities[:,uncommon_die_index])
+                    uncommon_prob_datum = datum_probabilities[:,uncommon_die_index] / np.sum(datum_probabilities[:,uncommon_die_index])
+
+                    uncommon_outcome_recon = recon_outcomes[:,uncommon_die_index] / np.sum(recon_outcomes[:,uncommon_die_index])
+                    uncommon_outcome_datum = datum_outcomes[:,uncommon_die_index] / np.sum(datum_outcomes[:,uncommon_die_index])
+
+                    uncommon_mse  = np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)**2) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum)**2)
+                    uncommon_error = np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum))
+                    uncommon_meandiff = np.mean(uncommon_prob_datum - uncommon_prob_recon) + np.mean(uncommon_outcome_recon - uncommon_outcome_datum)
+
+                    
+                    recon_diff = recon_diff.append({"uncommon_mse":uncommon_mse, "common_mse":common_mse, "uncommon_error":uncommon_error, "common_error":common_error, "uncommon_meandiff":uncommon_meandiff, "common_meandif":common_meandiff}, ignore_index=True)
+
+
+            recon_diff.to_pickle(exp_dir + "\smallGenCommon.pkl")
 if __name__ == '__main__':
     args = parse_arguments(sys.argv[1:])
     main(args)

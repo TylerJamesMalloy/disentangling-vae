@@ -16,11 +16,6 @@ from disvae.utils.modelIO import save_metadata
 
 from disvae.utils.utility import getUtilityLoss
 
-TEST_LOSSES_FILE = "test_losses.log"
-METRICS_FILENAME = "metrics.log"
-METRIC_HELPERS_FILE = "metric_helpers.pth"
-TEST_UTILITY_FILE = "test_utilities.log"
-
 
 class Evaluator:
     """
@@ -50,7 +45,8 @@ class Evaluator:
                  device=torch.device("cpu"),
                  logger=logging.getLogger(__name__),
                  save_dir="results",
-                 is_progress_bar=True):
+                 is_progress_bar=True,
+                 gen_file_name=None):
 
         self.device = device
         self.loss_f = loss_f
@@ -59,6 +55,7 @@ class Evaluator:
         self.save_dir = save_dir
         self.is_progress_bar = is_progress_bar
         self.logger.info("Testing Device: {}".format(self.device))
+        self.gen_file_name = gen_file_name
 
     def __call__(self, data_loader, is_metrics=False, is_losses=True, is_utility=True):
         """Compute all test losses.
@@ -76,9 +73,32 @@ class Evaluator:
         is_utility: bool, optional
             Whether to computer the expected utility of the model representations 
         """
+        
+        TEST_LOSSES_FILE = "test_losses.log"
+        METRICS_FILENAME = "metrics.log"
+        METRIC_HELPERS_FILE = "metric_helpers.pth"
+        TEST_UTILITY_FILE = "test_utilities.log"
+
         start = default_timer()
         is_still_training = self.model.training
         self.model.eval()
+
+        if self.gen_file_name is not None:
+            TEST_LOSSES_FILE = self.gen_file_name + "/" + TEST_LOSSES_FILE
+            METRICS_FILENAME = self.gen_file_name + "/" + METRICS_FILENAME
+            METRIC_HELPERS_FILE = self.gen_file_name + "/" + METRIC_HELPERS_FILE
+            TEST_UTILITY_FILE = self.gen_file_name + "/" + TEST_UTILITY_FILE
+
+            if(not os.path.exists(self.save_dir + "/" + self.gen_file_name)):
+                os.mkdir(self.save_dir + "/" + self.gen_file_name)
+            if(not os.path.exists(self.save_dir  + "/" + TEST_LOSSES_FILE)):
+                open(self.save_dir + "/" + TEST_LOSSES_FILE, 'a').close()
+            if(not os.path.exists(self.save_dir  + "/" + METRICS_FILENAME)):
+                open(self.save_dir + "/" + METRICS_FILENAME, 'a').close()
+            if(not os.path.exists(self.save_dir  + "/" + METRIC_HELPERS_FILE)):
+                open(self.save_dir + "/" + METRIC_HELPERS_FILE, 'a').close()
+            if(not os.path.exists(self.save_dir + "/" + TEST_UTILITY_FILE)):
+                open(self.save_dir + "/" + TEST_UTILITY_FILE, 'a').close()
 
         metric, losses = None, None
         if is_metrics:
