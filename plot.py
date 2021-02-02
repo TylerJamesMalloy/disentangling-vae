@@ -22,8 +22,8 @@ matplotlib.rc('xtick', labelsize=32)
 matplotlib.rc('ytick', labelsize=32) 
 
 
-upsilons = ["u0", "u500", "u1000"]
-betas = ["b1", "b8", "b10", "b25", "b50", "b100", "b250", "b500" ,"b1000"]
+upsilons = ["u0", "u1000"]
+betas = ["b1", "b8", "b10", "b25","b100", "b250", "b500", "b1000"]
 agents = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10"]
 
 
@@ -33,8 +33,8 @@ for upsilon in upsilons:
     for beta in betas: 
         agent_data = pd.DataFrame()
         for agent in agents:
-            utility_file = "./results/" + upsilon + "/" + "dice_" + beta + "_" + agent + "/" + "test_utilities.log"
-            recon_file = "./results/" + upsilon + "/" + "dice_" + beta + "_" + agent + "/" + "test_losses.log"
+            utility_file = "./results/" + upsilon + "/" + "dice_" + beta + "_" + agent + "/gen/" + "test_utilities.log"
+            recon_file = "./results/" + upsilon + "/" + "dice_" + beta + "_" + agent + "/gen/" + "test_losses.log"
             
             if(path.exists(utility_file) and path.exists(recon_file)):
                 f = open(utility_file, "r")
@@ -63,10 +63,10 @@ for upsilon in upsilons:
 
 #fig, (ax1, ax2) = plt.subplots(1, 2)
 fig, ax1 = plt.subplots(1, 1)
-plt.suptitle("Utility Loss by Representation Bottleneck", size=42)
+plt.suptitle("Generalization Loss by Information Bottleneck", size=42)
 
 u0_data = data.loc[data["upsilon"] == 0]
-u500_data = data.loc[data["upsilon"] == 500]
+#u500_data = data.loc[data["upsilon"] == 500]
 u1000_data = data.loc[data["upsilon"] == 1000]
 
 x = u0_data["beta"] 
@@ -88,17 +88,8 @@ ys = trend[0] * np.exp(trend[1] * xs) + 0.35
 line = plt.plot(x, y, 'r.', xs, ys, 'r-')
 line[1].set_label(r'$\upsilon = 1000$')
 
-x = u500_data["beta"] 
-y = u500_data["ul_mean"]
-trend = sp.optimize.curve_fit(lambda t,a,b: a*np.exp(b*t),  x,  y - 0.35,  p0=(4, 0.1))[0]
-
-xs = np.linspace(0,7)
-ys = trend[0] * np.exp(trend[1] * xs) + 0.35
-line = plt.plot(x, y, 'g.', xs, ys, 'g-')
-line[1].set_label(r'$\upsilon = 500$')
-
 plt.legend(fontsize=32) # using a size in points
-plt.xlabel("Information Constraint", size = 32)
+plt.xlabel("Information Bottleneck", size = 32)
 plt.ylabel("Utility Loss", size = 32)
 plt.show()
 assert(False)

@@ -1,7 +1,7 @@
 import os 
 
 upsilons = ["u0", "u1000"]
-betas = ["b1", "b4", "b8", "b10", "b25", "b50", "b100", "b250", "b500", "b1000"]
+betas = ["b1", "b4", "b10", "b25","b100", "b250", "b500", "b1000"]
 agents = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10"]
 
 for upsilon in upsilons: 

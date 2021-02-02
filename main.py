@@ -297,14 +297,18 @@ def main(args):
             for data, _ in test_loader:
                 data_index += 1
 
-                if(data_index > 100):
-                    continue 
-
                 datum = data.to(device)#.cpu().numpy()
                 recon_datum, latent_dist, latent_sample = model(datum)
 
                 recon_data = np.squeeze(recon_datum.detach().cpu().numpy())
                 stimulus_data = np.squeeze(datum.detach().cpu().numpy())
+
+                all_data_piles = stimulus_data[:,0:12]
+                die_sums = np.sum(np.sum(all_data_piles, axis=0), axis=0)
+
+                common_die_index = np.argmax(die_sums)
+                uncommon_die_min = np.argmin(die_sums)
+                uncommon_die_indicies = [0,1,2,3,4,5,6,27,28,29,30,31]
 
                 for recon_datum, stimulus_datum in zip(recon_data, stimulus_data):
                     # Probability of drawing each of the 32 dice within each of the 12 piles 
@@ -320,33 +324,180 @@ def main(args):
                     datum_outcomes = stimulus_datum[12:22]
 
                     # most common die outcome and utility reconstruction accuracy: 
-                    common_die_index = np.argmax(np.sum(datum_piles, axis=0))
+                    
                     common_prob_recon = recon_probabilities[:,common_die_index] / np.sum(recon_probabilities[:,common_die_index])
                     common_prob_datum = datum_probabilities[:,common_die_index] / np.sum(datum_probabilities[:,common_die_index])
 
                     common_outcome_recon = recon_outcomes[:,common_die_index] / np.sum(recon_outcomes[:,common_die_index])
                     common_outcome_datum = datum_outcomes[:,common_die_index] / np.sum(datum_outcomes[:,common_die_index])
 
-                    common_mse  = np.mean(np.abs(common_prob_datum - common_prob_recon)**2) + np.mean(np.abs(common_outcome_recon - common_outcome_datum)**2)
-                    common_error = np.mean(np.abs(common_prob_datum - common_prob_recon)) + np.mean(np.abs(common_outcome_recon - common_outcome_datum))
-                    common_meandiff = np.mean(common_prob_datum - common_prob_recon) + np.mean(common_outcome_recon - common_outcome_datum)
+                    common_error  = np.mean(np.abs(common_prob_datum - common_prob_recon)) + np.mean(np.abs(common_outcome_recon - common_outcome_datum))
                     # Least common die outcome and utility reconstruction accuracy: 
-                    uncommon_die_index = np.argmin(np.sum(datum_piles, axis=0))
-                    uncommon_prob_recon = recon_probabilities[:,uncommon_die_index] / np.sum(recon_probabilities[:,uncommon_die_index])
-                    uncommon_prob_datum = datum_probabilities[:,uncommon_die_index] / np.sum(datum_probabilities[:,uncommon_die_index])
 
-                    uncommon_outcome_recon = recon_outcomes[:,uncommon_die_index] / np.sum(recon_outcomes[:,uncommon_die_index])
-                    uncommon_outcome_datum = datum_outcomes[:,uncommon_die_index] / np.sum(datum_outcomes[:,uncommon_die_index])
+                    uncommon_errors = []
+                    for uncommon_die_index in uncommon_die_indicies: 
+                        uncommon_prob_recon = recon_probabilities[:,uncommon_die_index] / np.sum(recon_probabilities[:,uncommon_die_index])
+                        uncommon_prob_datum = datum_probabilities[:,uncommon_die_index] / np.sum(datum_probabilities[:,uncommon_die_index])
 
-                    uncommon_mse  = np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)**2) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum)**2)
-                    uncommon_error = np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum))
-                    uncommon_meandiff = np.mean(uncommon_prob_datum - uncommon_prob_recon) + np.mean(uncommon_outcome_recon - uncommon_outcome_datum)
+                        uncommon_outcome_recon = recon_outcomes[:,uncommon_die_index] / np.sum(recon_outcomes[:,uncommon_die_index])
+                        uncommon_outcome_datum = datum_outcomes[:,uncommon_die_index] / np.sum(datum_outcomes[:,uncommon_die_index])
+
+                        uncommon_errors.append(np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum)))
+
+                    uncommon_error_mean = np.mean(uncommon_errors)
+
+                    uncommon_prob_recon = recon_probabilities[:,uncommon_die_min] / np.sum(recon_probabilities[:,uncommon_die_min])
+                    uncommon_prob_datum = datum_probabilities[:,uncommon_die_min] / np.sum(datum_probabilities[:,uncommon_die_min])
+
+                    uncommon_outcome_recon = recon_outcomes[:,uncommon_die_min] / np.sum(recon_outcomes[:,uncommon_die_min])
+                    uncommon_outcome_datum = datum_outcomes[:,uncommon_die_min] / np.sum(datum_outcomes[:,uncommon_die_min])
+
+                    uncommon_error  = np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum))
 
                     
-                    recon_diff = recon_diff.append({"uncommon_mse":uncommon_mse, "common_mse":common_mse, "uncommon_error":uncommon_error, "common_error":common_error, "uncommon_meandiff":uncommon_meandiff, "common_meandif":common_meandiff}, ignore_index=True)
+                    if(common_error > uncommon_error ):
+
+                        print("uncommon_error ",uncommon_error, " common_error ",common_error )
+
+                        print("uncommon prob ", np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)))
+                        print("uncommon out ", np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum)))
+
+                        print("common prob ", np.mean(np.abs(common_prob_datum - common_prob_recon)))
+                        print("common out ", np.mean(np.abs(common_outcome_recon - common_outcome_datum)))
+
+                        assert(False)
+                    
+                    
+                    recon_diff = recon_diff.append({"uncommon_error":uncommon_error, "common_error":common_error, "uncommon_error_mean":uncommon_error_mean}, ignore_index=True)
 
 
-            recon_diff.to_pickle(exp_dir + "\smallGenCommon.pkl")
+            #recon_diff.to_pickle(exp_dir + "\FrequencyError.pkl")
 if __name__ == '__main__':
     args = parse_arguments(sys.argv[1:])
     main(args)
+
+
+
+"""
+data_dice_EUs = []
+recon_dice_EUs = []
+for die_index in range(32):
+    die_datum_probabilities =  datum_probabilities[:,die_index]
+    if(np.sum(recon_probabilities[:,die_index]) > 0): # If the sum of the reconstructed probabiltiies is too small to matter, act randomly 
+        die_recon_probabilities =  recon_probabilities[:,die_index] / np.sum(recon_probabilities[:,die_index])
+    else:
+        die_recon_probabilities = np.ones(10) / 10
+        die_recon_probabilities = die_recon_probabilities / np.sum(die_recon_probabilities)
+
+    die_datum_outcomes = datum_outcomes[:,die_index]
+    die_recon_outcomes = recon_outcomes[:,die_index]
+
+    data_dice_EUs.append(np.sum(die_datum_probabilities * die_datum_outcomes))
+    recon_dice_EUs.append(np.sum(die_recon_probabilities * die_recon_outcomes))
+
+data_dice_EUs = np.asarray(data_dice_EUs)
+recon_dice_EUs = np.asarray(recon_dice_EUs)
+
+data_pile_EUs = []
+recon_pile_EUs = []
+for index, (recon_pile, datum_pile) in enumerate(zip(recon_piles, datum_piles)): 
+    if(np.sum(recon_pile) > 0):
+        recon_pile_probability = recon_pile / np.sum(recon_pile)
+    else:
+        recon_pile_probability = np.ones(32) / 32
+        recon_pile_probability = recon_pile_probability / np.sum(recon_pile_probability)
+
+    datum_pile_probability = datum_pile / np.sum(datum_pile)
+
+    recon_pile_EUs.append(np.sum(recon_pile_probability * (100 * recon_dice_EUs))) # ecale eus 
+    data_pile_EUs.append(np.sum(datum_pile_probability * (100 * data_dice_EUs)))   # scale eus 
+
+data_pile_EUs = np.asarray(data_pile_EUs)
+recon_pile_EUs = np.asarray(recon_pile_EUs)
+
+data_eu = np.max(data_pile_EUs)
+softmax_inverse_temp = 10
+denominator = np.sum(exp_normalize(recon_pile_EUs * softmax_inverse_temp))
+if(denominator > 0):
+    recon_policy = exp_normalize(recon_pile_EUs * softmax_inverse_temp) / denominator
+else: 
+    recon_policy = np.ones(12) / 12
+    recon_policy = recon_policy / np.sum(recon_policy)
+
+recon_eu = np.sum(recon_policy * data_pile_EUs) 
+
+#print(data_eu - recon_eu)
+pile_eu_error = (data_pile_EUs / np.sum(data_pile_EUs)) - (recon_pile_EUs / np.sum(recon_pile_EUs)) 
+
+
+max_eu_mse_pile_index = np.argmax(pile_eu_error)
+min_eu_mse_pile_index = np.argmin(pile_eu_error)
+
+max_eu_pile_index = np.argmax(data_pile_EUs)
+min_eu_pile_index = np.argmin(data_pile_EUs)
+
+min_max_mse_diff = pile_eu_error[max_eu_pile_index] - pile_eu_error[min_eu_pile_index]
+
+# most common die outcome and utility reconstruction accuracy: 
+common_die_index = np.argmax(np.sum(datum_piles, axis=0))
+common_prob_recon = recon_probabilities[:,common_die_index] / np.sum(recon_probabilities[:,common_die_index])
+common_prob_datum = datum_probabilities[:,common_die_index] / np.sum(datum_probabilities[:,common_die_index])
+
+common_outcome_recon = recon_outcomes[:,common_die_index] / np.sum(recon_outcomes[:,common_die_index])
+common_outcome_datum = datum_outcomes[:,common_die_index] / np.sum(datum_outcomes[:,common_die_index])
+
+common_mse  = np.mean((common_prob_datum - common_prob_recon)**2) + np.mean((common_outcome_recon - common_outcome_datum)**2)
+# Least common die outcome and utility reconstruction accuracy: 
+uncommon_die_index = np.argmin(np.sum(datum_piles, axis=0))
+uncommon_prob_recon = recon_probabilities[:,uncommon_die_index] / np.sum(recon_probabilities[:,uncommon_die_index])
+uncommon_prob_datum = datum_probabilities[:,uncommon_die_index] / np.sum(datum_probabilities[:,uncommon_die_index])
+
+uncommon_outcome_recon = recon_outcomes[:,uncommon_die_index] / np.sum(recon_outcomes[:,uncommon_die_index])
+uncommon_outcome_datum = datum_outcomes[:,uncommon_die_index] / np.sum(datum_outcomes[:,uncommon_die_index])
+
+uncommon_mse  = np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum))
+
+# highest utility die reconstruction accuracy
+hud_index  = np.argmax(data_dice_EUs)
+hud_prob_recon = recon_probabilities[:,hud_index] / np.sum(recon_probabilities[:,hud_index])
+hud_prob_datum = datum_probabilities[:,hud_index] / np.sum(datum_probabilities[:,hud_index])
+
+hud_out_recon = recon_outcomes[:,hud_index] / np.sum(recon_outcomes[:,hud_index])
+hud_out_datum = datum_outcomes[:,hud_index] / np.sum(datum_outcomes[:,hud_index])
+
+hud_mse  = np.mean(np.abs(hud_prob_datum - hud_prob_recon))  + np.mean(np.abs(hud_out_recon - hud_out_datum))
+
+# lowest utility die reconstruction accuracy 
+lud_index  = np.argmin(data_dice_EUs)
+lud_prob_recon = recon_probabilities[:,lud_index] / np.sum(recon_probabilities[:,lud_index])
+lud_prob_datum = datum_probabilities[:,lud_index] / np.sum(datum_probabilities[:,lud_index])
+
+lud_out_recon = recon_outcomes[:,lud_index] / np.sum(recon_outcomes[:,lud_index])
+lud_out_datum = datum_outcomes[:,lud_index] / np.sum(datum_outcomes[:,lud_index])
+
+lud_mse  = np.mean(np.abs(lud_prob_recon - lud_prob_datum))  + np.mean(np.abs(lud_out_recon - lud_out_datum))
+
+common_prob_recon = recon_probabilities[:,common_die_index] / np.sum(recon_probabilities[:,common_die_index])
+common_prob_datum = datum_probabilities[:,common_die_index] / np.sum(datum_probabilities[:,common_die_index])
+
+common_outcome_recon = recon_outcomes[:,common_die_index] / np.sum(recon_outcomes[:,common_die_index])
+common_outcome_datum = datum_outcomes[:,common_die_index] / np.sum(datum_outcomes[:,common_die_index])
+
+common_error  = np.mean(np.abs(common_prob_datum - common_prob_recon)) + np.mean(np.abs(common_outcome_recon - common_outcome_datum))
+# Least common die outcome and utility reconstruction accuracy: 
+
+uncommon_errors = []
+for uncommon_die_index in uncommon_die_indicies: 
+    uncommon_prob_recon = recon_probabilities[:,uncommon_die_index] / np.sum(recon_probabilities[:,uncommon_die_index])
+    uncommon_prob_datum = datum_probabilities[:,uncommon_die_index] / np.sum(datum_probabilities[:,uncommon_die_index])
+
+    uncommon_outcome_recon = recon_outcomes[:,uncommon_die_index] / np.sum(recon_outcomes[:,uncommon_die_index])
+    uncommon_outcome_datum = datum_outcomes[:,uncommon_die_index] / np.sum(datum_outcomes[:,uncommon_die_index])
+
+    uncommon_errors.append(np.mean(np.abs(uncommon_prob_datum - uncommon_prob_recon)) + np.mean(np.abs(uncommon_outcome_recon - uncommon_outcome_datum)))
+
+uncommon_error  = np.mean(uncommon_errors)
+
+mse_diff = (uncommon_mse - common_mse) 
+recon_diff = recon_diff.append({"uncommon_mse":uncommon_mse, "common_mse":common_mse, "hud_mse":hud_mse, "lud_mse":lud_mse, "max_pile_error":pile_eu_error[max_eu_pile_index], "min_pile_error":pile_eu_error[min_eu_pile_index]}, ignore_index=True)
+"""

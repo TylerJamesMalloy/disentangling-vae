@@ -140,7 +140,8 @@ class DisentangledDataset(Dataset, abc.ABC):
         pass
 
 
-def genDiceData(file_name, num_dice = 32, num_piles = 12, num_sides = 10, num_data = 10):
+
+def genDiceData(file_name, num_dice = 32, num_piles = 12, num_sides = 10, num_data = 10000):
     all_data = []
     # If data doesn't exist make it:
     alphas = np.random.beta(a=4, b=4, size=num_piles) * 100
