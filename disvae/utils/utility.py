@@ -1,93 +1,92 @@
 import numpy as np
+from PIL import Image
+import torch 
+import ctypes
+ctypes.cdll.LoadLibrary('caffe2_nvrtc.dll') # this was necessary on my machine, may not be on yours 
+
+
+def fancy_argmin(input_list):
+    # return the index of the lowest argument, if any are tied for lowest pick randomly 
+    list_min = np.min(input_list)
+    mins = []
+    for val_index, val in enumerate(input_list):
+        if(val == list_min):
+            mins.append(val_index)
+    
+    if(len(mins) > 1):
+        return np.random.choice(mins, 1)[0]
+    else:
+        return int(list_min)
+
+def get_closest_color(pixel):
+    red_mse = np.mean(np.square(pixel - [255, 0, 0]))
+    green_mse = np.mean(np.square(pixel - [0, 255, 0]))
+    blue_mse = np.mean(np.square(pixel - [0, 0, 255]))
+    yellow_mse = np.mean(np.square(pixel - [255, 255, 0]))
+    magenta_mse = np.mean(np.square(pixel - [255, 0, 255]))
+    cyan_mse = np.mean(np.square(pixel - [0, 255, 255]))
+
+    return fancy_argmin([magenta_mse, blue_mse, red_mse, cyan_mse, green_mse, yellow_mse])
 
 def exp_normalize(x):
     b = x.max()
     y = np.exp(x - b)
     return y / y.sum()
 
-def getUtilityLoss(data=None, recon_data=None, flag=False):
-    if(data is None or recon_data is None):
-        print(" Warning: Got None value for data or reconstruction")
-        print(" Data: ", data)
-        print(" Recon: ", recon_data)
-        return None 
-    
-    if(len(data.shape) > 3):
-        data = np.squeeze(data)
-    if(len(recon_data.shape) > 3):
-        recon_data = np.squeeze(recon_data)
+def getUtilityLoss(data=None, recon_data=None):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    data = data.cpu().detach().numpy()
+    recon_data = recon_data.cpu().detach().numpy()
 
-    eu_losses = []
-    for batch_index, (recon, datum) in enumerate(zip(recon_data, data)): 
-        # Probability of drawing each of the 32 dice within each of the 12 piles 
-        recon_piles = recon[0:12]
-        datum_piles = datum[0:12]
+    circle_indicies = [[1, 11], [14, 24], [27, 37], [40, 50], [53, 63]]
+    color_values = [20, 12, 8, 4, 2, 1]
 
-        # probabilities of each of the 10 sides for each of the 32 dice 
-        recon_probabilities = recon[22:32]
-        datum_probabilities = datum[22:32] 
+    util_mse = 0
 
-        # normalized outcomes of each of the 10 sides for each of the 32 dice
-        recon_outcomes = recon[12:22]
-        datum_outcomes = datum[12:22]
+    for datum, recon_datum in zip(data, recon_data):
 
-        data_dice_EUs = []
-        recon_dice_EUs = []
-        for die_index in range(32):
-            die_datum_probabilities =  datum_probabilities[:,die_index]
-            if(np.sum(recon_probabilities[:,die_index]) > 0): # If the sum of the reconstructed probabiltiies is too small to matter, act randomly 
-                die_recon_probabilities =  recon_probabilities[:,die_index] / np.sum(recon_probabilities[:,die_index])
-            else:
-                die_recon_probabilities = np.ones(10) / 10
-                die_recon_probabilities = die_recon_probabilities / np.sum(die_recon_probabilities)
+        recon_utilities = []
+        data_utilities = []
 
-            die_datum_outcomes = datum_outcomes[:,die_index]
-            die_recon_outcomes = recon_outcomes[:,die_index]
+        for circle_x in circle_indicies:
+            for circle_y in circle_indicies:
 
-            data_dice_EUs.append(np.sum(die_datum_probabilities * die_datum_outcomes))
-            recon_dice_EUs.append(np.sum(die_recon_probabilities * die_recon_outcomes))
-        
-        data_dice_EUs = np.asarray(data_dice_EUs)
-        recon_dice_EUs = np.asarray(recon_dice_EUs)
+                #circle = datum[:,1:11,1:11]
+                datum_circle = np.transpose(datum[:,circle_x[0]:circle_x[1],circle_y[0]:circle_y[1]]).astype("uint8") * 255
+                recon_circle = np.transpose(recon_datum[:,circle_x[0]:circle_x[1],circle_y[0]:circle_y[1]]).astype("uint8") * 255
+                recon_circle_colors = np.zeros(6)
+                datum_circle_colors = np.zeros(6)
 
-        data_pile_EUs = []
-        recon_pile_EUs = []
-        for index, (recon_pile, datum_pile) in enumerate(zip(recon_piles, datum_piles)): 
-            if(np.sum(recon_pile) > 0):
-                recon_pile_probability = recon_pile / np.sum(recon_pile)
-            else:
-                recon_pile_probability = np.ones(32) / 32
-                recon_pile_probability = recon_pile_probability / np.sum(recon_pile_probability)
+                for x in np.random.choice(10, 3):
+                    for y in np.random.choice(10, 3):
+                        datum_pixel = datum_circle[x,y,:]
+                        recon_pixel = recon_circle[x,y,:]
+                        if(np.array_equal(datum_pixel, [255, 255, 255]) or np.array_equal(datum_pixel, [0, 0, 0])):
+                            # skip white and black pixles
+                            continue
+                        
+                        datum_color = get_closest_color(datum_pixel)
+                        datum_circle_colors[datum_color] += 1
 
-            datum_pile_probability = datum_pile / np.sum(datum_pile)
+                        recon_color = get_closest_color(recon_pixel)
+                        recon_circle_colors[recon_color] += 1
 
-            recon_pile_EUs.append(np.sum(recon_pile_probability * (100 * recon_dice_EUs))) # ecale eus 
-            data_pile_EUs.append(np.sum(datum_pile_probability * (100 * data_dice_EUs)))   # scale eus 
-        
-        data_pile_EUs = np.asarray(data_pile_EUs)
-        recon_pile_EUs = np.asarray(recon_pile_EUs)
+                if(np.sum(recon_circle_colors) > 0):
+                    recon_circle_colors = recon_circle_colors / np.sum(recon_circle_colors)
+                    recon_color_guess = np.random.choice(range(6), p=recon_circle_colors)
+                else:
+                    recon_color_guess = np.random.choice(range(6))
+                    
 
-        data_eu = np.max(data_pile_EUs)
-        softmax_inverse_temp = 10
-        denominator = np.sum(exp_normalize(recon_pile_EUs * softmax_inverse_temp))
-        if(denominator > 0):
-            recon_policy = exp_normalize(recon_pile_EUs * softmax_inverse_temp) / denominator
-        else: 
-            recon_policy = np.ones(12) / 12
-            recon_policy = recon_policy / np.sum(recon_policy)
+                if(np.sum(datum_circle_colors) > 0):
+                    datum_circle_colors = datum_circle_colors / np.sum(datum_circle_colors)
+                    datum_color_guess = np.random.choice(range(6), p=datum_circle_colors)
+                else:
+                    datum_color_guess = np.random.choice(range(6))
 
-        recon_eu = np.sum(recon_policy * data_pile_EUs) 
-        eu_losses.append((data_eu - recon_eu))
+                recon_utilities.append(color_values[recon_color_guess])
+                data_utilities.append(color_values[datum_color_guess])
 
-        if(eu_losses != eu_losses):
-            print(" Got NAN expected utility loss")
-            print(" Loss ", data_eu - recon_eu)
-            print(" Data EU ", data_eu)
-            print(" Recon EU ", recon_eu)
-            print(" Recon Policy", recon_policy)
-            print(" Data Pile EUs", data_pile_EUs)
-            print(" ", recon_eu)
-            assert(False)
+        util_mse += np.square(np.mean(recon_utilities) - np.mean(data_utilities))
 
-    batch_mean_loss = np.mean(eu_losses)
-    return batch_mean_loss
+    return util_mse

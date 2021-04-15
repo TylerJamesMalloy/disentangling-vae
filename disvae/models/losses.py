@@ -8,14 +8,14 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch import optim
-import numpy as np
 
 from .discriminator import Discriminator
 from disvae.utils.math import (log_density_gaussian, log_importance_weight_matrix,
                                matrix_log_density_gaussian)
+
 from disvae.utils.utility import getUtilityLoss
 
-LOSSES = ["VAE", "betaH", "betaB", "factor", "btcvae", "utility"]
+LOSSES = ["VAE", "betaH", "betaB", "factor", "btcvae"]
 RECON_DIST = ["bernoulli", "laplace", "gaussian"]
 
 
@@ -27,12 +27,11 @@ def get_loss_f(loss_name, **kwargs_parse):
     if loss_name == "betaH":
         return BetaHLoss(beta=kwargs_parse["betaH_B"], u=kwargs_parse["u"], **kwargs_all)
     elif loss_name == "VAE":
-        return BetaHLoss(beta=1, u=kwargs_parse["u"], **kwargs_all)
+        return BetaHLoss(beta=1, **kwargs_all)
     elif loss_name == "betaB":
         return BetaBLoss(C_init=kwargs_parse["betaB_initC"],
                          C_fin=kwargs_parse["betaB_finC"],
                          gamma=kwargs_parse["betaB_G"],
-                         u=kwargs_parse["u"],
                          **kwargs_all)
     elif loss_name == "factor":
         return FactorKLoss(kwargs_parse["device"],
@@ -134,7 +133,7 @@ class BetaHLoss(BaseLoss):
         a constrained variational framework." (2016).
     """
 
-    def __init__(self, beta=4, u=0.1, **kwargs):
+    def __init__(self, beta=4, u=0, **kwargs):
         super().__init__(**kwargs)
         self.beta = beta
         self.u = u
@@ -149,9 +148,12 @@ class BetaHLoss(BaseLoss):
         anneal_reg = (linear_annealing(0, 1, self.n_train_steps, self.steps_anneal)
                       if is_train else 1)
         
-        utility_loss = _utility_loss(data=data, recon_data=recon_data)
-
-        loss = rec_loss + (self.u * utility_loss) + anneal_reg * (self.beta * kl_loss) 
+        if(self.u > 0):
+            utility_loss = getUtilityLoss(data,recon_data)
+        else:
+            utility_loss = 0
+        
+        loss = rec_loss + (self.u * utility_loss) + anneal_reg * (self.beta * kl_loss)
 
         if storer is not None:
             storer['loss'].append(loss.item())
@@ -183,75 +185,30 @@ class BetaBLoss(BaseLoss):
         $\beta$-VAE." arXiv preprint arXiv:1804.03599 (2018).
     """
 
-    def __init__(self, C_init=0., C_fin=20., gamma=100., u=0.1, **kwargs):
+    def __init__(self, C_init=0., C_fin=20., gamma=100., **kwargs):
         super().__init__(**kwargs)
         self.gamma = gamma
         self.C_init = C_init
         self.C_fin = C_fin
-        self.u = u
 
     def __call__(self, data, recon_data, latent_dist, is_train, storer, **kwargs):
         storer = self._pre_call(is_train, storer)
+
         rec_loss = _reconstruction_loss(data, recon_data,
                                         storer=storer,
                                         distribution=self.rec_dist)
-
         kl_loss = _kl_normal_loss(*latent_dist, storer)
 
         C = (linear_annealing(self.C_init, self.C_fin, self.n_train_steps, self.steps_anneal)
              if is_train else self.C_fin)
 
-        utility_loss = _utility_loss(data=data, recon_data=recon_data)
-
-        loss = rec_loss + (self.u * utility_loss)  + self.gamma * (kl_loss - C).abs()
+        loss = rec_loss + self.gamma * (kl_loss - C).abs()
 
         if storer is not None:
             storer['loss'].append(loss.item())
 
         return loss
 
-class UtilityLoss(BaseLoss):
-    """
-    Compute the Expected Utility loss as in Malloy et al. 
-
-    Parameters
-    ----------
-    C_init : float, optional
-        Starting annealed capacity C.
-
-    C_fin : float, optional
-        Final annealed capacity C.
-
-    gamma : float, optional
-        Weight of the KL divergence term.
-
-    kwargs:
-        Additional arguments for `BaseLoss`, e.g. rec_dist`.
-
-    References
-    ----------
-        [1] Mallot et al. not yet published (2021)
-    """
-
-    def __init__(self, C_init=0., C_fin=20., **kwargs):
-        super().__init__(**kwargs)
-        self.C_init = C_init
-        self.C_fin = C_fin
-
-    def __call__(self, data, recon_data, latent_dist, is_train, storer, **kwargs):
-        storer = self._pre_call(is_train, storer)
-
-        C = (linear_annealing(self.C_init, self.C_fin, self.n_train_steps, self.steps_anneal)
-             if is_train else self.C_fin)
-
-        kl_loss = _kl_normal_loss(*latent_dist, storer)
-
-        loss = _utility_loss(data=data, recon_data=recon_data)
-
-        if storer is not None:
-            storer['loss'].append(loss.item())
-
-        return loss
 
 class FactorKLoss(BaseLoss):
     """
@@ -328,10 +285,9 @@ class FactorKLoss(BaseLoss):
             # don't backprop if evaluating
             return vae_loss
 
-        # Run VAE optimizer
+        # Compute VAE gradients
         optimizer.zero_grad()
         vae_loss.backward(retain_graph=True)
-        optimizer.step()
 
         # Discriminator Loss
         # Get second sample of latent distribution
@@ -351,9 +307,12 @@ class FactorKLoss(BaseLoss):
         # TO-DO: check ifshould also anneals discriminator if not becomes too good ???
         #d_tc_loss = anneal_reg * d_tc_loss
 
-        # Run discriminator optimizer
+        # Compute discriminator gradients
         self.optimizer_d.zero_grad()
         d_tc_loss.backward()
+
+        # Update at the end (since pytorch 1.5. complains if update before)
+        optimizer.step()
         self.optimizer_d.step()
 
         if storer is not None:
@@ -439,11 +398,6 @@ class BtcvaeLoss(BaseLoss):
 
         return loss
 
-def _utility_loss(data=None, recon_data=None):
-    data = data.detach().cpu().numpy()
-    recon_data = recon_data.detach().cpu().numpy()
-    batch_utility_loss = getUtilityLoss(data=data, recon_data=recon_data)
-    return torch.cuda.FloatTensor([batch_utility_loss])
 
 def _reconstruction_loss(data, recon_data, distribution="bernoulli", storer=None):
     """
@@ -481,8 +435,7 @@ def _reconstruction_loss(data, recon_data, distribution="bernoulli", storer=None
     is_colored = n_chan == 3
 
     if distribution == "bernoulli":
-        # loss = F.binary_cross_entropy(recon_data, data, reduction="sum") # original without logits 
-        loss = F.binary_cross_entropy_with_logits(recon_data, data, reduction="sum") 
+        loss = F.binary_cross_entropy(recon_data, data, reduction="sum")
     elif distribution == "gaussian":
         # loss in [0,255] space but normalized by 255 to not be too big
         loss = F.mse_loss(recon_data * 255, data * 255, reduction="sum") / 255

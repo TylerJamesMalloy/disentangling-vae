@@ -13,6 +13,10 @@ import numpy as np
 import scipy as sp
 
 import torch
+
+import ctypes
+ctypes.cdll.LoadLibrary('caffe2_nvrtc.dll')
+
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, datasets
 
@@ -24,8 +28,10 @@ DATASETS_DICT = {"mnist": "MNIST",
                  "dsprites": "DSprites",
                  "celeba": "CelebA",
                  "chairs": "Chairs",
-                 "dice": "Dice",
-                 "gendice": "GenDice"}
+                 "marbles": "Marbles",
+                 "two_marbles": "Two_Marbles",
+                 "three_marbles": "Three_Marbles",
+                 "four_marbles": "Four_Marbles"}
 DATASETS = list(DATASETS_DICT.keys())
 
 
@@ -96,7 +102,6 @@ def get_dataloaders(dataset, root=None, shuffle=True, pin_memory=True,
                       pin_memory=pin_memory,
                       **kwargs)
 
-
 class DisentangledDataset(Dataset, abc.ABC):
     """Base Class for disentangled VAE datasets.
 
@@ -140,80 +145,20 @@ class DisentangledDataset(Dataset, abc.ABC):
         pass
 
 
-
-def genDiceData(file_name, num_dice = 32, num_piles = 12, num_sides = 10, num_data = 10000):
-    all_data = []
-    # If data doesn't exist make it:
-    alphas = np.random.beta(a=4, b=4, size=num_piles) * 100
-    betas  = np.random.beta(a=4, b=4, size=num_piles) * 100
-    print("pile alphas ", alphas)
-    print("pile betas ",  betas)
-
-    probability_alphas = np.random.beta(a=4, b=4, size=num_dice) * 100
-    probability_betas  = np.random.beta(a=4, b=4, size=num_dice) * 100
-    print("probability alphas ", probability_alphas)
-    print("probability betas ",  probability_betas)
-
-    outcome_alphas = np.random.beta(a=4, b=4, size=num_dice) * 100
-    outcome_betas  = np.random.beta(a=4, b=4, size=num_dice) * 100
-    print("outcome alphas ", outcome_alphas)
-    print("outcome betas ",  outcome_betas)
-
-    for data_index in range(num_data):
-        piles = []
-
-        if(data_index % 100 == 0):
-            print(data_index)
-        
-        for index in range(num_piles):
-            pile = np.ones(32)
-            sample = np.random.beta(a=alphas[index], b=betas[index], size=1000)
-            for value in sample:
-                for index in range(32):
-                    if(value < ((index + 1)/32) and value >= (index/32)):
-                        pile[index] += 1
-        
-            pile = pile / np.sum(pile)
-            piles.append(pile) 
-        
-        probabilities = []
-        for i in range(0,num_dice):
-            p = np.random.beta(a=probability_alphas[i], b=probability_betas[i], size=num_sides)
-            p = p / np.sum(p)
-            p = np.sort(p)
-            probabilities.append(p)
-            
-        outcomes = []
-        for i in range(0,num_dice):
-            outcome = np.random.beta(a=outcome_alphas[i], b=outcome_betas[i], size=num_sides)
-            outcome = np.sort(outcome)
-            outcomes.append(outcome)
-
-        arrays = [np.asarray(piles), np.transpose(np.asarray(outcomes)), np.transpose(np.asarray(probabilities))]
-        data_point = np.vstack(arrays)
-
-        all_data.append(data_point)
-
-    np.save(file=file_name, arr=all_data)
-    #print("MADE NEW DATA: ", all_data)
-
-class Dice(DisentangledDataset):
+class Marbles(DisentangledDataset):
     """ 
     Data set of die probabilities and outcomes
     """
-    img_size = (1, 32, 32)
+    img_size = (3, 64, 64)
     files = {"train": "dice"}
     background_color = COLOUR_WHITE
 
-    def __init__(self, root=os.path.join(DIR, '../data/dice/'), genData=None, **kwargs):
+    def __init__(self, root=os.path.join(DIR, '../data/marbles/raw/'), **kwargs):
         super().__init__(root, [transforms.ToTensor()], **kwargs)
 
-        self.train_data = os.path.join(root, 'train.npy') if genData is None else os.path.join(root, genData) 
-        if(not os.path.exists(self.train_data)):
-            genDiceData(file_name=self.train_data)
-            
-        dataset_zip = np.load(self.train_data)
-        self.imgs = dataset_zip
+        self.train_data = os.path.join(root, '1K_marbles.npy') 
+        dataset = np.load(self.train_data, allow_pickle=True)
+        self.imgs = dataset
 
         #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         #self.imgs = torch.from_numpy(dataset_zip).float().to(device)
@@ -224,6 +169,82 @@ class Dice(DisentangledDataset):
     
     def download(self):
         return 
+
+class Two_Marbles(DisentangledDataset):
+    """ 
+    Data set of die probabilities and outcomes
+    """
+    img_size = (3, 64, 64)
+    files = {"train": "dice"}
+    background_color = COLOUR_WHITE
+
+    def __init__(self, root=os.path.join(DIR, '../data/two_marbles/raw/'), **kwargs):
+        super().__init__(root, [transforms.ToTensor()], **kwargs)
+
+        self.train_data = os.path.join(root, '1K_marbles.npy') 
+        dataset = np.load(self.train_data, allow_pickle=True)
+        self.imgs = dataset
+
+        #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        #self.imgs = torch.from_numpy(dataset_zip).float().to(device)
+    
+    def __getitem__(self, idx):
+        sample = self.transforms(self.imgs[idx])
+        return sample, 0
+    
+    def download(self):
+        return 
+
+class Three_Marbles(DisentangledDataset):
+    """ 
+    Data set of die probabilities and outcomes
+    """
+    img_size = (3, 64, 64)
+    files = {"train": "dice"}
+    background_color = COLOUR_WHITE
+
+    def __init__(self, root=os.path.join(DIR, '../data/three_marbles/raw/'), **kwargs):
+        super().__init__(root, [transforms.ToTensor()], **kwargs)
+
+        self.train_data = os.path.join(root, '1K_marbles.npy') 
+        dataset = np.load(self.train_data, allow_pickle=True)
+        self.imgs = dataset
+
+        #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        #self.imgs = torch.from_numpy(dataset_zip).float().to(device)
+    
+    def __getitem__(self, idx):
+        sample = self.transforms(self.imgs[idx])
+        return sample, 0
+    
+    def download(self):
+        return 
+
+class Four_Marbles(DisentangledDataset):
+    """ 
+    Data set of die probabilities and outcomes
+    """
+    img_size = (3, 64, 64)
+    files = {"train": "dice"}
+    background_color = COLOUR_WHITE
+
+    def __init__(self, root=os.path.join(DIR, '../data/four_marbles/raw/'), **kwargs):
+        super().__init__(root, [transforms.ToTensor()], **kwargs)
+
+        self.train_data = os.path.join(root, '1K_marbles.npy') 
+        dataset = np.load(self.train_data, allow_pickle=True)
+        self.imgs = dataset
+
+        #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        #self.imgs = torch.from_numpy(dataset_zip).float().to(device)
+    
+    def __getitem__(self, idx):
+        sample = self.transforms(self.imgs[idx])
+        return sample, 0
+    
+    def download(self):
+        return 
+
 
 class DSprites(DisentangledDataset):
     """DSprites Dataset from [1].

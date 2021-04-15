@@ -14,7 +14,9 @@ from disvae.models.losses import get_loss_f
 from disvae.utils.math import log_density_gaussian
 from disvae.utils.modelIO import save_metadata
 
-from disvae.utils.utility import getUtilityLoss
+TEST_LOSSES_FILE = "test_losses.log"
+METRICS_FILENAME = "metrics.log"
+METRIC_HELPERS_FILE = "metric_helpers.pth"
 
 
 class Evaluator:
@@ -45,8 +47,7 @@ class Evaluator:
                  device=torch.device("cpu"),
                  logger=logging.getLogger(__name__),
                  save_dir="results",
-                 is_progress_bar=True,
-                 gen_file_name=None):
+                 is_progress_bar=True):
 
         self.device = device
         self.loss_f = loss_f
@@ -55,9 +56,8 @@ class Evaluator:
         self.save_dir = save_dir
         self.is_progress_bar = is_progress_bar
         self.logger.info("Testing Device: {}".format(self.device))
-        self.gen_file_name = gen_file_name
 
-    def __call__(self, data_loader, is_metrics=False, is_losses=True, is_utility=True):
+    def __call__(self, data_loader, is_metrics=False, is_losses=True):
         """Compute all test losses.
 
         Parameters
@@ -69,36 +69,10 @@ class Evaluator:
 
         is_losses: bool, optional
             Whether to compute and store the test losses.
-        
-        is_utility: bool, optional
-            Whether to computer the expected utility of the model representations 
         """
-        
-        TEST_LOSSES_FILE = "test_losses.log"
-        METRICS_FILENAME = "metrics.log"
-        METRIC_HELPERS_FILE = "metric_helpers.pth"
-        TEST_UTILITY_FILE = "test_utilities.log"
-
         start = default_timer()
         is_still_training = self.model.training
         self.model.eval()
-
-        if self.gen_file_name is not None:
-            TEST_LOSSES_FILE = self.gen_file_name + "/" + TEST_LOSSES_FILE
-            METRICS_FILENAME = self.gen_file_name + "/" + METRICS_FILENAME
-            METRIC_HELPERS_FILE = self.gen_file_name + "/" + METRIC_HELPERS_FILE
-            TEST_UTILITY_FILE = self.gen_file_name + "/" + TEST_UTILITY_FILE
-
-            if(not os.path.exists(self.save_dir + "/" + self.gen_file_name)):
-                os.mkdir(self.save_dir + "/" + self.gen_file_name)
-            if(not os.path.exists(self.save_dir  + "/" + TEST_LOSSES_FILE)):
-                open(self.save_dir + "/" + TEST_LOSSES_FILE, 'a').close()
-            if(not os.path.exists(self.save_dir  + "/" + METRICS_FILENAME)):
-                open(self.save_dir + "/" + METRICS_FILENAME, 'a').close()
-            if(not os.path.exists(self.save_dir  + "/" + METRIC_HELPERS_FILE)):
-                open(self.save_dir + "/" + METRIC_HELPERS_FILE, 'a').close()
-            if(not os.path.exists(self.save_dir + "/" + TEST_UTILITY_FILE)):
-                open(self.save_dir + "/" + TEST_UTILITY_FILE, 'a').close()
 
         metric, losses = None, None
         if is_metrics:
@@ -112,12 +86,6 @@ class Evaluator:
             losses = self.compute_losses(data_loader)
             self.logger.info('Losses: {}'.format(losses))
             save_metadata(losses, self.save_dir, filename=TEST_LOSSES_FILE)
-        
-        if is_utility: 
-            self.logger.info('Computing expected utility...')
-            utilities = self.compute_utilities(data_loader)
-            self.logger.info('Utility Losses: {}'.format(utilities))
-            save_metadata(utilities, self.save_dir, filename=TEST_UTILITY_FILE)
 
         if is_still_training:
             self.model.train()
@@ -125,24 +93,6 @@ class Evaluator:
         self.logger.info('Finished evaluating after {:.1f} min.'.format((default_timer() - start) / 60))
 
         return metric, losses
-
-    def compute_utilities(self, dataloader):
-        """Compute all test losses.
-
-        Parameters
-        ----------
-        data_loader: torch.utils.data.DataLoader
-        """
-        storer = defaultdict(list)
-        for data, _ in tqdm(dataloader, leave=False, disable=not self.is_progress_bar):
-            data = data.to(self.device)
-            recon_data, latent_dist, latent_sample = self.model(data)
-            data = np.squeeze(data.detach().cpu().numpy())
-            recon_data = np.squeeze(recon_data.detach().cpu().numpy())
-            
-            utility_loss = getUtilityLoss(data=data, recon_data=recon_data, flag=True)
-
-            return utility_loss
 
     def compute_losses(self, dataloader):
         """Compute all test losses.
@@ -156,8 +106,8 @@ class Evaluator:
             data = data.to(self.device)
 
             try:
-                recon_data, latent_dist, latent_sample = self.model(data)
-                _ = self.loss_f(data, recon_data, latent_dist, self.model.training,
+                recon_batch, latent_dist, latent_sample = self.model(data)
+                _ = self.loss_f(data, recon_batch, latent_dist, self.model.training,
                                 storer, latent_sample=latent_sample)
             except ValueError:
                 # for losses that use multiple optimizers (e.g. Factor)
