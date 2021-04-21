@@ -39,7 +39,6 @@ def train():
     loss_fn = torch.nn.MSELoss(reduction='sum')
 
     learning_rate = 1e-5
-
     batch_size = 1024
     epochs = 100
 

@@ -14,6 +14,7 @@ from utils.datasets import get_dataloaders, get_img_size, DATASETS
 from utils.helpers import (create_safe_directory, get_device, set_seed, get_n_param,
                            get_config_section, update_namespace_, FormatterNoDuplicate)
 from utils.visualize import GifTraversalsTraining
+from disvae.utils.utility import utilityModel
 
 
 CONFIG_FILE = "hyperparam.ini"
@@ -55,6 +56,7 @@ def parse_arguments(args_to_parse):
 
     # Learning options
     training = parser.add_argument_group('Training specific options')
+    training.add_argument('--output-dim', type=int, default=4, help="model output dim")
     training.add_argument('--checkpoint-every',
                           type=int, default=default_config['checkpoint_every'],
                           help='Save a checkpoint of the trained model every n epoch.')
@@ -185,6 +187,7 @@ def main(args):
     logger.info("Root directory for saving and loading experiments: {}".format(exp_dir))
 
     if not args.is_eval_only:
+        utility_model = utilityModel(args=args)
 
         create_safe_directory(exp_dir, logger=logger)
 
@@ -213,18 +216,20 @@ def main(args):
                             n_data=len(train_loader.dataset),
                             device=device,
                             **vars(args))
-        trainer = Trainer(model, optimizer, loss_f,
+        trainer = Trainer(model, utility_model, optimizer, loss_f,
                           device=device,
                           logger=logger,
                           save_dir=exp_dir,
                           is_progress_bar=not args.no_progress_bar,
-                          gif_visualizer=gif_visualizer)
+                          gif_visualizer=gif_visualizer,
+                          args=args)
         trainer(train_loader,
                 epochs=args.epochs,
                 checkpoint_every=args.checkpoint_every,)
 
         # SAVE MODEL AND EXPERIMENT INFORMATION
         save_model(trainer.model, exp_dir, metadata=vars(args))
+        trainer.saveUtilityModel(exp_dir)
 
     if args.is_metrics or not args.no_test:
         model = load_model(exp_dir, is_gpu=not args.no_cuda)
@@ -238,7 +243,7 @@ def main(args):
                             n_data=len(test_loader.dataset),
                             device=device,
                             **vars(args))
-        evaluator = Evaluator(model, loss_f,
+        evaluator = Evaluator(model, utility_model, loss_f,
                               device=device,
                               logger=logger,
                               save_dir=exp_dir,

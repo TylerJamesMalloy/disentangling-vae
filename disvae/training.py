@@ -8,11 +8,14 @@ from tqdm import trange
 import torch
 from torch.nn import functional as F
 
-from disvae.utils.modelIO import save_model
+import numpy as np
+import pandas as pd 
 
-
+from disvae.evaluate import Evaluator
+from disvae.models.losses import LOSSES, RECON_DIST, get_loss_f
+from disvae.utils.modelIO import save_model, load_model, load_metadata
+from utils.datasets import get_dataloaders 
 TRAIN_LOSSES_LOGFILE = "train_losses.log"
-
 
 class Trainer():
     """
@@ -43,13 +46,13 @@ class Trainer():
         Whether to use a progress bar for training.
     """
 
-    def __init__(self, model, optimizer, loss_f,
+    def __init__(self, model, utilityModel, optimizer, loss_f,
                  device=torch.device("cpu"),
                  logger=logging.getLogger(__name__),
                  save_dir="results",
                  gif_visualizer=None,
-                 is_progress_bar=True):
-
+                 is_progress_bar=True,
+                 args=None):
         self.device = device
         self.model = model.to(self.device)
         self.loss_f = loss_f
@@ -60,6 +63,10 @@ class Trainer():
         self.losses_logger = LossesLogger(os.path.join(self.save_dir, TRAIN_LOSSES_LOGFILE))
         self.gif_visualizer = gif_visualizer
         self.logger.info("Training Device: {}".format(self.device))
+        self.utilityModel = utilityModel
+    
+    def saveUtilityModel(self, exp_dir):
+        torch.save(self.utilityModel.model.state_dict(), exp_dir + "utility_model.pt")
 
     def __call__(self, data_loader,
                  epochs=10,
@@ -77,14 +84,18 @@ class Trainer():
         checkpoint_every: int, optional
             Save a checkpoint of the trained model every n epoch.
         """
+        losses = pd.DataFrame()
+        Utility_Losses = pd.DataFrame()
         start = default_timer()
         self.model.train()
         for epoch in range(epochs):
             storer = defaultdict(list)
-            mean_epoch_loss = self._train_epoch(data_loader, storer, epoch)
-            self.logger.info('Epoch: {} Average loss per image: {:.2f}'.format(epoch + 1,
-                                                                               mean_epoch_loss))
+            mean_epoch_loss, eu_epoch_loss = self._train_epoch(data_loader, storer, epoch)
+            self.logger.info('Epoch: {} Average reconstruction loss: {:.4f} Expected Utility loss {:.8f}'.format(epoch + 1, mean_epoch_loss, eu_epoch_loss))
             self.losses_logger.log(epoch, storer)
+
+            utility_loss = {"loss": eu_epoch_loss, "epoch": epoch}
+            Utility_Losses = Utility_Losses.append(utility_loss, ignore_index=True)
 
             if self.gif_visualizer is not None:
                 self.gif_visualizer()
@@ -92,6 +103,9 @@ class Trainer():
             if epoch % checkpoint_every == 0:
                 save_model(self.model, self.save_dir,
                            filename="model-{}.pt".format(epoch))
+        
+        
+        Utility_Losses.to_pickle(os.path.join(self.save_dir, "utility.pkl"))
 
         if self.gif_visualizer is not None:
             self.gif_visualizer.save_reset()
@@ -121,20 +135,23 @@ class Trainer():
             Mean loss per image
         """
         epoch_loss = 0.
+        epoch_eu_loss = 0.0
         kwargs = dict(desc="Epoch {}".format(epoch + 1), leave=False,
                       disable=not self.is_progress_bar)
         with trange(len(data_loader), **kwargs) as t:
-            for _, (data, _) in enumerate(data_loader):
-                iter_loss = self._train_iteration(data, storer)
+            for _, (data, idxs) in enumerate(data_loader):
+                iter_loss, iter_eu_loss = self._train_iteration(data.float(), storer, idxs)
                 epoch_loss += iter_loss
-
+                epoch_eu_loss += iter_eu_loss
+                
                 t.set_postfix(loss=iter_loss)
                 t.update()
 
+        mean_eu_loss = epoch_eu_loss / len(data_loader)
         mean_epoch_loss = epoch_loss / len(data_loader)
-        return mean_epoch_loss
+        return mean_epoch_loss, mean_eu_loss
 
-    def _train_iteration(self, data, storer):
+    def _train_iteration(self, data, storer, idxs):
         """
         Trains the model for one iteration on a batch of data.
 
@@ -150,19 +167,23 @@ class Trainer():
         data = data.to(self.device)
 
         try:
-            recon_batch, latent_dist, latent_sample = self.model(data)
-            loss = self.loss_f(data, recon_batch, latent_dist, self.model.training,
-                               storer, latent_sample=latent_sample)
+            recon_data, latent_dist, latent_sample = self.model(data)
+            self.utilityModel.trainUtility(data, latent_dist, latent_sample, idxs)
+            utility_loss = self.utilityModel.getUtilityLoss(latent_dist, latent_sample, idxs)
+            loss = self.loss_f(data, recon_data, latent_dist, self.model.training,
+                               storer, latent_sample=latent_sample, utility_loss=utility_loss)
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-
+            
+            return (loss.item(), utility_loss)
+                
         except ValueError:
             # for losses that use multiple optimizers (e.g. Factor)
+            print("something went wrong in loss calculation")
+            assert(False)
             loss = self.loss_f.call_optimize(data, self.model, self.optimizer, storer)
-
-        return loss.item()
-
+            return (loss.item() , 0)
 
 class LossesLogger(object):
     """Class definition for objects to write data to log files in a

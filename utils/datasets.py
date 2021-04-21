@@ -54,30 +54,6 @@ def get_background(dataset):
     """Return the image background color."""
     return get_dataset(dataset).background_color
 
-def get_gendata(genData, name=None, shuffle=True, pin_memory=True,
-                    batch_size=128, logger=logging.getLogger(__name__), **kwargs):
-    """A generic data loader
-
-    Parameters
-    ----------
-    dataset : {"mnist", "fashion", "dsprites", "celeba", "chairs"}
-        Name of the dataset to load
-
-    root : str
-        Path to the dataset root. If `None` uses the default one.
-
-    kwargs :
-        Additional arguments to `DataLoader`. Default values are modified.
-    """
-    pin_memory = pin_memory and torch.cuda.is_available  # only pin if GPU available
-    Dataset = get_dataset("dice")
-    dataset = Dataset(genData=genData) 
-    return DataLoader(dataset,
-                      batch_size=batch_size,
-                      shuffle=shuffle,
-                      pin_memory=pin_memory,
-                      **kwargs)
-
 def get_dataloaders(dataset, root=None, shuffle=True, pin_memory=True,
                     batch_size=128, logger=logging.getLogger(__name__), **kwargs):
     """A generic data loader
@@ -165,7 +141,7 @@ class Marbles(DisentangledDataset):
     
     def __getitem__(self, idx):
         sample = self.transforms(self.imgs[idx])
-        return sample, 0
+        return sample, idx
     
     def download(self):
         return 
@@ -190,7 +166,7 @@ class Two_Marbles(DisentangledDataset):
     
     def __getitem__(self, idx):
         sample = self.transforms(self.imgs[idx])
-        return sample, 0
+        return sample, idx
     
     def download(self):
         return 
@@ -215,7 +191,7 @@ class Three_Marbles(DisentangledDataset):
     
     def __getitem__(self, idx):
         sample = self.transforms(self.imgs[idx])
-        return sample, 0
+        return sample, idx
     
     def download(self):
         return 
@@ -240,11 +216,10 @@ class Four_Marbles(DisentangledDataset):
     
     def __getitem__(self, idx):
         sample = self.transforms(self.imgs[idx])
-        return sample, 0
+        return sample, idx
     
     def download(self):
         return 
-
 
 class DSprites(DisentangledDataset):
     """DSprites Dataset from [1].
@@ -344,7 +319,6 @@ class DSprites(DisentangledDataset):
         lat_value = self.lat_values[idx]
         return sample, lat_value
 
-
 class CelebA(DisentangledDataset):
     """CelebA Dataset from [1].
 
@@ -422,7 +396,6 @@ class CelebA(DisentangledDataset):
         # dataloaders requires so
         return img, 0
 
-
 class Chairs(datasets.ImageFolder):
     """Chairs Dataset from [1].
 
@@ -482,7 +455,6 @@ class Chairs(datasets.ImageFolder):
         preprocess(os.path.join(self.train_data, '*/*'),  # root/*/*/*.png structure
                    size=type(self).img_size[1:],
                    center_crop=(400, 400))
-
 
 class MNIST(datasets.MNIST):
     """Mnist wrapper. Docs: `datasets.MNIST.`"""

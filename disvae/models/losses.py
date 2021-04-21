@@ -13,8 +13,6 @@ from .discriminator import Discriminator
 from disvae.utils.math import (log_density_gaussian, log_importance_weight_matrix,
                                matrix_log_density_gaussian)
 
-from disvae.utils.utility import getUtilityLoss
-
 LOSSES = ["VAE", "betaH", "betaB", "factor", "btcvae"]
 RECON_DIST = ["bernoulli", "laplace", "gaussian"]
 
@@ -138,7 +136,7 @@ class BetaHLoss(BaseLoss):
         self.beta = beta
         self.u = u
 
-    def __call__(self, data, recon_data, latent_dist, is_train, storer, **kwargs):
+    def __call__(self, data, recon_data, latent_dist, is_train, storer, utility_loss=0, **kwargs):
         storer = self._pre_call(is_train, storer)
 
         rec_loss = _reconstruction_loss(data, recon_data,
@@ -147,11 +145,6 @@ class BetaHLoss(BaseLoss):
         kl_loss = _kl_normal_loss(*latent_dist, storer)
         anneal_reg = (linear_annealing(0, 1, self.n_train_steps, self.steps_anneal)
                       if is_train else 1)
-        
-        if(self.u > 0):
-            utility_loss = getUtilityLoss(data,recon_data)
-        else:
-            utility_loss = 0
         
         loss = rec_loss + (self.u * utility_loss) + anneal_reg * (self.beta * kl_loss)
 

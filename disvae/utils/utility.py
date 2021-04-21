@@ -5,88 +5,59 @@ import ctypes
 ctypes.cdll.LoadLibrary('caffe2_nvrtc.dll') # this was necessary on my machine, may not be on yours 
 
 
-def fancy_argmin(input_list):
-    # return the index of the lowest argument, if any are tied for lowest pick randomly 
-    list_min = np.min(input_list)
-    mins = []
-    for val_index, val in enumerate(input_list):
-        if(val == list_min):
-            mins.append(val_index)
-    
-    if(len(mins) > 1):
-        return np.random.choice(mins, 1)[0]
-    else:
-        return int(list_min)
+class utilityModel():
+    def __init__(self, input_dim=20, layers=[64,64], args=None):
 
-def get_closest_color(pixel):
-    red_mse = np.mean(np.square(pixel - [255, 0, 0]))
-    green_mse = np.mean(np.square(pixel - [0, 255, 0]))
-    blue_mse = np.mean(np.square(pixel - [0, 0, 255]))
-    yellow_mse = np.mean(np.square(pixel - [255, 255, 0]))
-    magenta_mse = np.mean(np.square(pixel - [255, 0, 255]))
-    cyan_mse = np.mean(np.square(pixel - [0, 255, 255]))
+        self.output_dim = args.output_dim
+        self.dataset = args.dataset 
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        model = torch.nn.Sequential(
+            torch.nn.Linear(input_dim, layers[0]),
+            torch.nn.ReLU(),
+            torch.nn.Linear(layers[0], layers[1]),
+            torch.nn.ReLU(),
+            torch.nn.Linear(layers[1], self.output_dim))
+        self.model = model.to(self.device)
+        self.loss_fn = torch.nn.MSELoss(reduction='sum')
+        self.learning_rate = 5e-4
+        self.batch_size = 1024
+        self.epochs = 100
+        self.utilities = np.load("./data/" + self.dataset + "/raw/1k_marbles_utilities.npy")
+        self.epoch = 0
 
-    return fancy_argmin([magenta_mse, blue_mse, red_mse, cyan_mse, green_mse, yellow_mse])
+    def experience():
+        # add experience to memory
+        return 
 
-def exp_normalize(x):
-    b = x.max()
-    y = np.exp(x - b)
-    return y / y.sum()
+    def memory():
+        return 
 
-def getUtilityLoss(data=None, recon_data=None):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    data = data.cpu().detach().numpy()
-    recon_data = recon_data.cpu().detach().numpy()
+    def getUtilityLoss(self, latent_dist, latent_sample, idxs):
 
-    circle_indicies = [[1, 11], [14, 24], [27, 37], [40, 50], [53, 63]]
-    color_values = [20, 12, 8, 4, 2, 1]
+        utils = self.utilities[idxs]
+        utils = torch.from_numpy(utils).float().to(self.device)
+        concat_dims = torch.cat((latent_dist[0],latent_dist[1]), dim=1)
+        prediction = self.model(concat_dims)
 
-    util_mse = 0
+        loss = torch.nn.MSELoss(reduction='none')
+        loss_result = torch.sum(loss(utils,prediction),dim=0) 
 
-    for datum, recon_datum in zip(data, recon_data):
+        return np.mean(loss_result.cpu().detach().numpy())
 
-        recon_utilities = []
-        data_utilities = []
+    def trainUtility(self, data, latent_dist, latent_sample, idxs):
+        concat_dims = torch.cat((latent_dist[0],latent_dist[1]), dim=1)
 
-        for circle_x in circle_indicies:
-            for circle_y in circle_indicies:
+        self.epoch += 1
 
-                #circle = datum[:,1:11,1:11]
-                datum_circle = np.transpose(datum[:,circle_x[0]:circle_x[1],circle_y[0]:circle_y[1]]).astype("uint8") * 255
-                recon_circle = np.transpose(recon_datum[:,circle_x[0]:circle_x[1],circle_y[0]:circle_y[1]]).astype("uint8") * 255
-                recon_circle_colors = np.zeros(6)
-                datum_circle_colors = np.zeros(6)
+        utility_truth = self.utilities[idxs]
+        utility_truth = torch.from_numpy(utility_truth).float().to(self.device)
+        utility_prediction = self.model(concat_dims)
 
-                for x in np.random.choice(10, 3):
-                    for y in np.random.choice(10, 3):
-                        datum_pixel = datum_circle[x,y,:]
-                        recon_pixel = recon_circle[x,y,:]
-                        if(np.array_equal(datum_pixel, [255, 255, 255]) or np.array_equal(datum_pixel, [0, 0, 0])):
-                            # skip white and black pixles
-                            continue
-                        
-                        datum_color = get_closest_color(datum_pixel)
-                        datum_circle_colors[datum_color] += 1
+        loss = self.loss_fn(utility_prediction, utility_truth)
 
-                        recon_color = get_closest_color(recon_pixel)
-                        recon_circle_colors[recon_color] += 1
+        self.model.zero_grad()
+        loss.backward(retain_graph=True)
 
-                if(np.sum(recon_circle_colors) > 0):
-                    recon_circle_colors = recon_circle_colors / np.sum(recon_circle_colors)
-                    recon_color_guess = np.random.choice(range(6), p=recon_circle_colors)
-                else:
-                    recon_color_guess = np.random.choice(range(6))
-                    
-
-                if(np.sum(datum_circle_colors) > 0):
-                    datum_circle_colors = datum_circle_colors / np.sum(datum_circle_colors)
-                    datum_color_guess = np.random.choice(range(6), p=datum_circle_colors)
-                else:
-                    datum_color_guess = np.random.choice(range(6))
-
-                recon_utilities.append(color_values[recon_color_guess])
-                data_utilities.append(color_values[datum_color_guess])
-
-        util_mse += np.square(np.mean(recon_utilities) - np.mean(data_utilities))
-
-    return util_mse
+        with torch.no_grad():
+            for param in self.model.parameters():
+                param -= self.learning_rate * param.grad
